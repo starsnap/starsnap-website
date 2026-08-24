@@ -1,11 +1,20 @@
+import type { SVGProps } from 'react';
+import ThemeToggle from './theme-toggle';
+
 const ArrowUpRight = () => <span aria-hidden="true">↗</span>;
+
+const StarIcon = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
+  <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...props}>
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+  </svg>
+);
 
 export default function Home() {
   return (
     <>
       <header className="site-header">
         <a className="wordmark" href="#top" aria-label="StarSnap 홈">
-          <span className="brand-mark" aria-hidden="true" />
+          <StarIcon className="brand-mark" />
           <span>StarSnap</span>
         </a>
         <nav className="site-nav" aria-label="주요 메뉴">
@@ -13,9 +22,12 @@ export default function Home() {
           <a href="#company">회사 소개</a>
           <a href="#contact">문의</a>
         </nav>
-        <a className="header-cta" href="#contact">
-          협업 문의 <ArrowUpRight />
-        </a>
+        <div className="header-actions">
+          <ThemeToggle />
+          <a className="header-cta" href="#contact">
+            협업 문의 <ArrowUpRight />
+          </a>
+        </div>
       </header>
 
       <main>
@@ -54,7 +66,7 @@ export default function Home() {
           <div className="product-preview preview-social" aria-hidden="true">
             <div className="preview-header">
               <span className="mini-brand">
-                <span className="brand-mark brand-mark-small" aria-hidden="true" />
+                <StarIcon className="brand-mark brand-mark-small" />
                 Social
               </span>
               <span className="preview-status">Connected</span>
@@ -186,7 +198,7 @@ export default function Home() {
 
       <footer className="site-footer">
         <a className="wordmark footer-wordmark" href="#top" aria-label="StarSnap 홈으로 이동">
-          <span className="brand-mark" aria-hidden="true" />
+          <StarIcon className="brand-mark" />
           <span>StarSnap</span>
         </a>
         <p>SNS · ERP · Digital Products</p>

@@ -1,8 +1,5 @@
 import type { Metadata } from 'next';
-import { Geist } from 'next/font/google';
 import './globals.css';
-
-const geist = Geist({ variable: '--font-geist', subsets: ['latin'] });
 
 const siteUrl = 'https://starsnap-company.hamtory06.chatgpt.site';
 const title = 'StarSnap | 사람의 연결부터 일의 흐름까지';
@@ -14,6 +11,7 @@ export const metadata: Metadata = {
   title,
   description,
   applicationName: 'StarSnap',
+  themeColor: '#f6f7fb',
   alternates: { canonical: '/' },
   icons: {
     icon: [{ url: '/icon.png', type: 'image/png' }],
@@ -44,8 +42,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ko">
-      <body className={geist.variable}>{children}</body>
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('starsnap-theme');var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}",
+          }}
+        />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

@@ -51,24 +51,15 @@ a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 }
 .wordmark { width: fit-content; font-size: 21px; }
 .brand-mark {
-  position: relative;
   display: inline-block;
-  width: 24px;
-  height: 24px;
-  transform: rotate(45deg);
-  border-radius: 7px;
-  background: var(--brand);
-  box-shadow: inset -4px -4px 0 rgb(23 27 36 / 8%);
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  background: linear-gradient(145deg, #fff28a 0%, var(--brand) 48%, #f3cf2d 100%);
+  clip-path: polygon(50% 1%, 62% 35%, 98% 36%, 69% 58%, 80% 96%, 50% 74%, 20% 96%, 31% 58%, 2% 36%, 38% 35%);
+  filter: drop-shadow(0 2px 2px rgb(23 27 36 / 14%));
 }
-.brand-mark::after {
-  position: absolute;
-  inset: 7px;
-  border-radius: 50%;
-  background: var(--ink);
-  content: '';
-}
-.brand-mark-small { width: 18px; height: 18px; border-radius: 5px; }
-.brand-mark-small::after { inset: 6px; }
+.brand-mark-small { width: 19px; height: 19px; }
 .site-nav { display: flex; gap: 38px; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
 .site-nav a, .header-cta, .button {
   transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, transform 180ms ease;

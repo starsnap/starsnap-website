@@ -47,7 +47,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('starsnap-theme');var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}",
+              "try{var t=localStorage.getItem('starsnap-theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);var n=d?'dark':'light';document.documentElement.classList.toggle('dark',d);document.documentElement.dataset.theme=n;document.documentElement.style.colorScheme=n}catch(e){}",
           }}
         />
       </head>

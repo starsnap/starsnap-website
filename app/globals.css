@@ -1,4 +1,4 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.6/dist/web/static/pretendard.css');
 @import './starsnap-tokens.css';
 @import 'tailwindcss';
 
@@ -104,6 +104,9 @@ section { scroll-margin-top: 88px; }
   background: var(--ss-surface-hover);
   color: var(--ss-text);
 }
+.theme-icon-light { display: none; }
+html.dark .theme-icon-dark { display: none; }
+html.dark .theme-icon-light { display: inline; }
 .header-cta,
 .button {
   display: inline-flex;

@@ -1,33 +1,62 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+
+type ColorTheme = 'light' | 'dark';
 
 const storageKey = 'starsnap-theme';
 
-const applyTheme = (dark: boolean) => {
+const getStoredTheme = (): ColorTheme | null => {
+  try {
+    const stored = localStorage.getItem(storageKey);
+    return stored === 'light' || stored === 'dark' ? stored : null;
+  } catch {
+    return null;
+  }
+};
+
+const getSystemTheme = (): ColorTheme =>
+  matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+const applyTheme = (theme: ColorTheme) => {
+  const dark = theme === 'dark';
   document.documentElement.classList.toggle('dark', dark);
-  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   themeColor?.setAttribute('content', dark ? '#121722' : '#f6f7fb');
 };
 
 export default function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-
   useEffect(() => {
-    const active = document.documentElement.classList.contains('dark');
-    applyTheme(active);
-    const frame = requestAnimationFrame(() => setDark(active));
+    const mediaQuery = matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemChange = () => {
+      if (!getStoredTheme()) applyTheme(getSystemTheme());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== storageKey) return;
+      applyTheme(getStoredTheme() ?? getSystemTheme());
+    };
 
-    return () => cancelAnimationFrame(frame);
+    mediaQuery.addEventListener('change', handleSystemChange);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleSystemChange);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
+    const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
     applyTheme(next);
-    localStorage.setItem(storageKey, next ? 'dark' : 'light');
+
+    try {
+      localStorage.setItem(storageKey, next);
+    } catch {
+      // The visual theme still changes when browser storage is unavailable.
+    }
   };
 
   return (
@@ -35,10 +64,11 @@ export default function ThemeToggle() {
       className="theme-toggle"
       type="button"
       onClick={toggleTheme}
-      aria-label={dark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-      title={dark ? '라이트 모드' : '다크 모드'}
+      aria-label="색상 테마 전환"
+      title="색상 테마 전환"
     >
-      <span aria-hidden="true">{dark ? '☀' : '☾'}</span>
+      <span className="theme-icon-dark" aria-hidden="true">☾</span>
+      <span className="theme-icon-light" aria-hidden="true">☀</span>
     </button>
   );
 }

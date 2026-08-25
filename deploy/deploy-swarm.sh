@@ -6,6 +6,8 @@ readonly expected_image_pattern='^ghcr\.io/starsnap/starsnap-website@sha256:[0-9
 readonly stack_file="deploy/docker-stack.yml"
 readonly caddy_config_file="deploy/Caddyfile"
 readonly caddy_image="docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+readonly api_network_name="starsnap-main_app-net"
+readonly api_service_name="starsnap-main_api"
 readonly rollout_timeout_seconds="${STARSNAP_ROLLOUT_TIMEOUT_SECONDS:-300}"
 readonly rollback_timeout_seconds="${STARSNAP_ROLLBACK_TIMEOUT_SECONDS:-240}"
 readonly cleanup_timeout_seconds="${STARSNAP_CLEANUP_TIMEOUT_SECONDS:-60}"
@@ -36,6 +38,11 @@ stack_names=""
 caddy_config_digest=""
 CADDY_CONFIG_NAME=""
 proxy_address=""
+api_network_details=""
+api_network_driver=""
+api_network_scope=""
+api_network_id=""
+api_service_network_ids=""
 
 if [[ ! "$STARSNAP_WEBSITE_IMAGE" =~ $expected_image_pattern ]]; then
   echo "Refusing to deploy a mutable or unexpected image reference." >&2
@@ -542,6 +549,31 @@ if [[ "$(docker info --format '{{.Swarm.ControlAvailable}}')" != "true" ]]; then
   exit 1
 fi
 
+if ! api_network_details="$(docker network inspect \
+  --format '{{.Driver}} {{.Scope}} {{.ID}}' \
+  "$api_network_name")"; then
+  echo "Required API overlay network is missing: $api_network_name" >&2
+  exit 1
+fi
+
+read -r api_network_driver api_network_scope api_network_id <<<"$api_network_details"
+if [[ "$api_network_driver" != "overlay" || "$api_network_scope" != "swarm" || -z "$api_network_id" ]]; then
+  echo "API network must be a Swarm-scoped overlay: $api_network_name" >&2
+  exit 1
+fi
+
+if ! api_service_network_ids="$(docker service inspect \
+  --format '{{range .Spec.TaskTemplate.Networks}}{{println .Target}}{{end}}' \
+  "$api_service_name")"; then
+  echo "Required API service is missing: $api_service_name" >&2
+  exit 1
+fi
+
+if ! grep -Fxq "$api_network_id" <<<"$api_service_network_ids"; then
+  echo "$api_service_name is not attached to $api_network_name." >&2
+  exit 1
+fi
+
 stack_names="$(docker stack ls --format '{{.Name}}')"
 if grep -Fxq "$STACK_NAME" <<<"$stack_names"; then
   previous_stack_exists=true
@@ -593,6 +625,12 @@ fi
 
 if ! grep -Fq "name: $CADDY_CONFIG_NAME" "$rendered_stack"; then
   echo "Rendered stack does not reference the expected Caddy config." >&2
+  exit 1
+fi
+
+if ! grep -Fq "name: $api_network_name" "$rendered_stack" \
+  || ! grep -Fq "starsnap_main_app_net: null" "$rendered_stack"; then
+  echo "Rendered Caddy service must attach to the external API overlay." >&2
   exit 1
 fi
 

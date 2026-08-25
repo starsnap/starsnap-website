@@ -92,6 +92,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+    networks:
+      - default
+      - starsnap_main_app_net
+
     healthcheck:
       test:
         - CMD-SHELL
@@ -145,3 +149,8 @@ configs:
 volumes:
   caddy_data:
   caddy_config:
+
+networks:
+  starsnap_main_app_net:
+    external: true
+    name: starsnap-main_app-net

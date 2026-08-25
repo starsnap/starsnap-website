@@ -9,7 +9,7 @@ starsnap.kr {
 
 api.starsnap.kr {
 	encode zstd gzip
-	reverse_proxy 192.168.1.103:8080
+	reverse_proxy starsnap-main_api:8080
 }
 
 www.starsnap.kr {

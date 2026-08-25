@@ -13,6 +13,8 @@ export FAKE_FAIL_CANDIDATE=false
 export FAKE_FAIL_CADDY_REDIRECT=false
 export FAKE_FAIL_CADDY_TLS=false
 export FAKE_SERVICE_LIST_ERROR=false
+export FAKE_API_NETWORK_MISSING=false
+export FAKE_API_SERVICE_NETWORK_MISSING=false
 
 cleanup() {
   if [[ "$test_root" == /tmp/* || "$test_root" == /var/folders/* ]]; then
@@ -44,6 +46,8 @@ reset_state() {
   export FAKE_FAIL_CADDY_REDIRECT=false
   export FAKE_FAIL_CADDY_TLS=false
   export FAKE_SERVICE_LIST_ERROR=false
+  export FAKE_API_NETWORK_MISSING=false
+  export FAKE_API_SERVICE_NETWORK_MISSING=false
 }
 
 seed_previous_caddy() {
@@ -75,6 +79,15 @@ docker() {
       ;;
     "service inspect")
       target="${!#}"
+      if [[ "$target" == "starsnap-main_api" ]]; then
+        if [[ "$FAKE_API_SERVICE_NETWORK_MISSING" == "true" ]]; then
+          printf '%s\n' "unrelated-network-id"
+        elif [[ " $* " == *"TaskTemplate.Networks"* ]]; then
+          printf '%s\n' "fake-api-network-id"
+        fi
+        return 0
+      fi
+
       if [[ "$target" == "starsnap-company_website" ]]; then
         if [[ ! -f "$FAKE_SWARM_STATE/current-image" ]]; then
           return 1
@@ -160,7 +173,7 @@ docker() {
       fi
       ;;
     "stack config")
-      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\n' \
+      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n    networks:\n      default: null\n      starsnap_main_app_net: null\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\nnetworks:\n  starsnap_main_app_net:\n    name: starsnap-main_app-net\n    external: true\n' \
         "$caddy_image" "$STARSNAP_WEBSITE_IMAGE" "$CADDY_CONFIG_NAME"
       ;;
     "stack ls")
@@ -177,6 +190,12 @@ docker() {
         return 1
       fi
       cat >/dev/null
+      ;;
+    "network inspect")
+      if [[ "$FAKE_API_NETWORK_MISSING" == "true" ]]; then
+        return 1
+      fi
+      printf '%s\n' "overlay swarm fake-api-network-id"
       ;;
     "config ls")
       find "$FAKE_SWARM_STATE/configs" -type f -name '*.data' -printf '%f\n' \
@@ -326,6 +345,32 @@ grep -Fq "Caddy verified: $caddy_image" <<<"$success_output"
 test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 test -e "$FAKE_SWARM_STATE/caddy-image"
 test -e "$FAKE_SWARM_STATE/caddy-config"
+
+grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
+if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
+  echo "Caddy must reach the API over the shared Swarm overlay." >&2
+  exit 1
+fi
+
+reset_state
+export FAKE_API_NETWORK_MISSING=true
+if missing_network_output="$(run_deploy 2>&1)"; then
+  echo "Expected a missing API overlay to stop deployment." >&2
+  exit 1
+fi
+grep -Fq "Required API overlay network is missing" <<<"$missing_network_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
+
+reset_state
+export FAKE_API_SERVICE_NETWORK_MISSING=true
+if detached_api_output="$(run_deploy 2>&1)"; then
+  echo "Expected a detached API service to stop deployment." >&2
+  exit 1
+fi
+grep -Fq "starsnap-main_api is not attached to starsnap-main_app-net" <<<"$detached_api_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 
 reset_state
 export FAKE_FAIL_CANDIDATE=true

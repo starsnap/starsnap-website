@@ -17,8 +17,8 @@ The deploy job is disabled until all of the following exist:
 - A repository variable named `STARSNAP_PROXY_HEALTH_URL` whose value is the
   Swarm manager's internal HTTP origin on port 80, such as
   `http://192.168.1.103/`. The deploy script sends explicit `starsnap.kr` and
-  `www.starsnap.kr` Host headers to this origin, so it does not depend on router
-  hairpin NAT or public DNS during rollout verification.
+  `www.starsnap.kr` and `api.starsnap.kr` Host headers to this origin, so it does
+  not depend on router hairpin NAT or public DNS during rollout verification.
 - A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
 - A GitHub environment named `production` that permits only `main` and follows
   the organization's chosen reviewer and administrator-bypass policy.
@@ -84,8 +84,10 @@ diagnostics.
 - `http://starsnap.kr/*` is upgraded automatically to HTTPS by Caddy.
 - `https://starsnap.kr/*` is reverse-proxied to `website:3000` on the stack
   overlay network.
-- `https://api.starsnap.kr/*` is reverse-proxied to the live StarSnap API on
-  `192.168.1.103:8080`; Caddy preserves normal HTTP and WebSocket proxying.
+- `https://api.starsnap.kr/*` is reverse-proxied to the live
+  `starsnap-main_api:8080` Swarm service over the external
+  `starsnap-main_app-net` overlay; Caddy preserves normal HTTP and WebSocket
+  proxying without depending on a manager-host port.
 - Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
   the equivalent `https://starsnap.kr` URI.
 
@@ -96,16 +98,19 @@ stack redeployments. Back up those volumes as sensitive production state; never
 copy their contents into the repository.
 
 The deploy script validates the committed Caddyfile with the pinned Caddy image
-before changing the stack. It then creates a content-addressed Docker Swarm
-config, verifies both services at `1/1`, and checks the apex HTTPS upgrade plus
-the one-hop `www` redirect over the internal port-80 origin. It also connects to
-the manager with `curl --resolve` while retaining the public host name for SNI
-and certificate validation, then verifies the apex content, icon, and HTTPS
-`www` redirect. It also checks `https://api.starsnap.kr/api/health` for the live
-API `{"status":"ok"}` response. On a failed update, it compares the complete
-previous Caddy service specification before rolling back, restores or removes
-each service according to the pre-deployment state, and removes a newly created
-config when it is no longer referenced.
+before changing the stack. It requires the external `starsnap-main_app-net`
+overlay and the `starsnap-main_api` service to exist, then creates a
+content-addressed Docker Swarm config, verifies both company services at `1/1`,
+and checks the apex HTTPS upgrade plus the one-hop `www` redirect over the
+internal port-80 origin. It also connects to the manager with `curl --resolve`
+while retaining the public host name for SNI and certificate validation, then
+verifies the apex content, icon, and HTTPS `www` redirect. It checks
+`https://api.starsnap.kr/api/health` for the live API `{"status":"ok"}` response,
+which proves Caddy can resolve and reach the API through the shared overlay. On
+a failed update, it compares the complete previous Caddy service specification
+before rolling back, restores or removes each service according to the
+pre-deployment state, and removes a newly created config when it is no longer
+referenced.
 
 Before the first deployment, public DNS must point the apex, `www`, and `api`
 names at the router's public IPv4 address, and the router must forward TCP 80 and

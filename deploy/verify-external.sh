@@ -8,6 +8,10 @@ readonly www_http_url="http://www.starsnap.kr"
 readonly www_https_url="https://www.starsnap.kr"
 readonly api_http_url="http://api.starsnap.kr"
 readonly api_https_url="https://api.starsnap.kr"
+readonly erp_http_url="http://erp.starsnap.kr"
+readonly erp_https_url="https://erp.starsnap.kr"
+readonly sns_http_url="http://sns.starsnap.kr"
+readonly sns_https_url="https://sns.starsnap.kr"
 readonly redirect_uri='/__starsnap_external_verify__/path?source=github&value=1'
 readonly attempts="${STARSNAP_EXTERNAL_VERIFY_ATTEMPTS:-36}"
 readonly delay_seconds="${STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS:-10}"
@@ -27,6 +31,9 @@ readonly headers_file="$temp_dir/headers.txt"
 readonly index_file="$temp_dir/index.html"
 readonly icon_file="$temp_dir/icon.png"
 readonly api_file="$temp_dir/api-health.json"
+readonly erp_index_file="$temp_dir/erp-index.html"
+readonly sns_index_file="$temp_dir/sns-index.html"
+readonly sns_health_file="$temp_dir/sns-health.json"
 
 # Invoked indirectly by the EXIT trap.
 # shellcheck disable=SC2329
@@ -69,6 +76,26 @@ verify_redirect() {
   fi
 }
 
+verify_status() {
+  local request_url="$1"
+  local expected_status="$2"
+  local status=""
+
+  if ! curl "${curl_common[@]}" \
+    --dump-header "$headers_file" \
+    --output /dev/null \
+    "$request_url"; then
+    echo "Status request failed: $request_url" >&2
+    return 1
+  fi
+
+  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$headers_file")"
+  if [[ "$status" != "$expected_status" ]]; then
+    echo "Unexpected status for $request_url: status=$status" >&2
+    return 1
+  fi
+}
+
 verify_once() {
   verify_redirect \
     "${apex_http_url}${redirect_uri}" \
@@ -86,6 +113,14 @@ verify_once() {
     "${www_https_url}${redirect_uri}" \
     "301" \
     "${apex_https_url}${redirect_uri}" || return 1
+  verify_redirect \
+    "${erp_http_url}/api/health" \
+    "308" \
+    "${erp_https_url}/api/health" || return 1
+  verify_redirect \
+    "${sns_http_url}/api/health" \
+    "308" \
+    "${sns_https_url}/api/health" || return 1
 
   # Curl's normal CA and hostname validation is intentionally retained here.
   # Do not add --insecure or --resolve; this job must exercise public DNS/TLS.
@@ -115,13 +150,49 @@ verify_once() {
     echo "Public API health response was not ok." >&2
     return 1
   fi
+
+  if ! curl "${curl_common[@]}" --fail --output "$erp_index_file" "${erp_https_url}/"; then
+    echo "Public ERP root request failed." >&2
+    return 1
+  fi
+  if ! grep -Fq "StarSnap ERP" "$erp_index_file"; then
+    echo "Public ERP root response did not contain the StarSnap ERP marker." >&2
+    return 1
+  fi
+
+  if ! verify_status "${erp_https_url}/api/health" "404"; then
+    echo "Public ERP detailed health endpoint was not hidden." >&2
+    return 1
+  fi
+  if ! verify_status "${erp_https_url}/api/health/" "404"; then
+    echo "Public ERP trailing-slash health endpoint was not hidden." >&2
+    return 1
+  fi
+
+  if ! curl "${curl_common[@]}" --fail --output "$sns_index_file" "${sns_https_url}/"; then
+    echo "Public SNS root request failed." >&2
+    return 1
+  fi
+  if ! grep -Fq "<title>StarSnap</title>" "$sns_index_file"; then
+    echo "Public SNS root response did not contain the StarSnap marker." >&2
+    return 1
+  fi
+
+  if ! curl "${curl_common[@]}" --fail --output "$sns_health_file" "${sns_https_url}/api/health"; then
+    echo "Public SNS API health request failed." >&2
+    return 1
+  fi
+  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$sns_health_file"; then
+    echo "Public SNS API health response was not ok." >&2
+    return 1
+  fi
 }
 
 attempt=1
 while (( attempt <= attempts )); do
   echo "External verification attempt $attempt/$attempts"
   if verify_once; then
-    echo "External verification passed for starsnap.kr, www.starsnap.kr, and api.starsnap.kr."
+    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, and sns.starsnap.kr."
     exit 0
   fi
 

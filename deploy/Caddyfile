@@ -12,6 +12,28 @@ api.starsnap.kr {
 	reverse_proxy starsnap-main_api:8080
 }
 
+erp.starsnap.kr {
+	encode zstd gzip
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	@erp_health path /api/health /api/health/*
+	handle @erp_health {
+		respond 404
+	}
+	handle {
+		reverse_proxy 192.168.1.2:3001
+	}
+}
+
+sns.starsnap.kr {
+	encode zstd gzip
+	reverse_proxy 192.168.1.2:3000
+}
+
 www.starsnap.kr {
 	redir https://starsnap.kr{uri} permanent
 }

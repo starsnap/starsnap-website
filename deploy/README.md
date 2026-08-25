@@ -96,6 +96,19 @@ node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   `starsnap-main_api:8080` Swarm service over the external
   `starsnap-main_app-net` overlay; Caddy preserves normal HTTP and WebSocket
   proxying without depending on a manager-host port.
+- `https://erp.starsnap.kr/*` is reverse-proxied over the private LAN to the
+  current StarSnap ERP Docker host at `192.168.1.2:3001`. That host must keep a
+  DHCP reservation, bind the ERP web listener only to `192.168.1.2`, set
+  `SITE_ORIGIN=https://erp.starsnap.kr`, and allow TCP 3001 only from the Caddy
+  manager at `192.168.1.103`. Never forward WAN port 3001 on the router. The
+  public ERP host always returns HTTP 404 for `/api/health` and its subpaths;
+  the deployment verifier checks detailed health directly over the private LAN.
+- `https://sns.starsnap.kr/*` is reverse-proxied over the private LAN to the
+  running `starsnap-main-web` Docker container at `192.168.1.2:3000`. This is a
+  standalone Docker workload, not a service in the current `starsnap-main`
+  Swarm stack. Keep the host address reserved and never forward WAN port 3000;
+  Caddy is the only public ingress. The web container continues to proxy its
+  same-origin `/api/*` and `/ws-chat` requests to the StarSnap backend.
 - Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
   the equivalent `https://starsnap.kr` URI.
 
@@ -115,7 +128,12 @@ config, update state, and healthcheck converge, it executes
 checks the website marker and icon directly, then reaches Caddy at service DNS
 `caddy:80/443` to check the apex HTTPS marker/icon, HTTP and HTTPS `www`
 one-hop redirects with path/query preservation, and the API HTTP redirect plus
-HTTPS health response. HTTPS requests set each public hostname as TLS SNI and
+HTTPS health response. It also verifies the ERP HTTP redirect and HTTPS page
+marker through Caddy, then checks the database-backed `/api/health` response
+directly over the LAN so detailed health data is never exposed publicly.
+It also verifies the SNS HTTP redirect, HTTPS page marker, and same-origin API
+health response through the running StarSnap web container.
+HTTPS requests set each public hostname as TLS SNI and
 retain normal CA and hostname verification; no insecure TLS mode is used.
 
 Because this internal route check is part of Caddy convergence, a failure uses
@@ -136,6 +154,10 @@ mode. It verifies:
   preserving a test path and query string;
 - API HTTP redirects to HTTPS and public `/api/health` returns
   `{"status":"ok"}`.
+- ERP HTTP redirects to HTTPS, its public root contains the `StarSnap ERP`
+  marker, and its detailed public `/api/health` path remains hidden with 404.
+- SNS HTTP redirects to HTTPS, its public root contains the StarSnap title, and
+  its same-origin `/api/health` returns `{"status":"ok"}`.
 
 An external verification failure fails the workflow and provides public-path
 evidence, but it does not mutate the already converged Swarm deployment.
@@ -148,7 +170,7 @@ verify-only request or after a successful normal deployment. Verify-only runs
 use a run-specific concurrency group, so they do not wait behind a build or
 deployment queued for the same branch.
 
-Before the first deployment, public DNS must point the apex, `www`, and `api`
+Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, and `sns`
 names at the router's public IPv4 address, and the router must forward TCP 80 and
 443 to the manager's ports 80 and 443. Keep port 80 reachable because ACME
 validation and the required HTTP-to-HTTPS redirects use it. Avoid publishing an

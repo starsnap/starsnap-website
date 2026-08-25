@@ -366,6 +366,12 @@ grep -Fq "Website rollback verified: $previous_image" \
 test ! -e "$FAKE_SWARM_STATE/caddy-image"
 
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:3001" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:3000" deploy/Caddyfile
+grep -Fq 'hostname: "192.168.1.2"' deploy/verify-internal.mjs
+grep -Fq 'port: 3001' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("erp.starsnap.kr", "/api/health/")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("sns.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
   echo "Caddy must reach the API over the shared Swarm overlay." >&2
   exit 1

@@ -71,6 +71,12 @@ curl() {
     'http://api.starsnap.kr/api/health')
       printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://api.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
       ;;
+    'http://erp.starsnap.kr/api/health')
+      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://erp.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
+      ;;
+    'http://sns.starsnap.kr/api/health')
+      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://sns.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
+      ;;
     'http://www.starsnap.kr/__starsnap_external_verify__/path?source=github&value=1' \
       |'https://www.starsnap.kr/__starsnap_external_verify__/path?source=github&value=1')
       printf 'HTTP/1.1 301 Moved Permanently\r\nLocation: https://starsnap.kr/__starsnap_external_verify__/path?source=github&value=1\r\n\r\n' >"$dump_header"
@@ -82,6 +88,29 @@ curl() {
       printf '%s' 'PNG' >"$output"
       ;;
     'https://api.starsnap.kr/api/health')
+      printf '%s' '{"status": "ok"}' >"$output"
+      ;;
+    'https://erp.starsnap.kr/')
+      printf '%s' '<html><title>StarSnap ERP</title></html>' >"$output"
+      ;;
+    'https://erp.starsnap.kr/api/health')
+      if [[ "$FAKE_EXTERNAL_MODE" == "exposed_erp_health" ]]; then
+        printf 'HTTP/2 200 OK\r\n\r\n' >"$dump_header"
+      else
+        printf 'HTTP/2 404 Not Found\r\n\r\n' >"$dump_header"
+      fi
+      ;;
+    'https://erp.starsnap.kr/api/health/')
+      if [[ "$FAKE_EXTERNAL_MODE" == "exposed_erp_health_slash" ]]; then
+        printf 'HTTP/2 200 OK\r\n\r\n' >"$dump_header"
+      else
+        printf 'HTTP/2 404 Not Found\r\n\r\n' >"$dump_header"
+      fi
+      ;;
+    'https://sns.starsnap.kr/')
+      printf '%s' '<html><title>StarSnap</title></html>' >"$output"
+      ;;
+    'https://sns.starsnap.kr/api/health')
       printf '%s' '{"status": "ok"}' >"$output"
       ;;
     *)
@@ -110,8 +139,45 @@ grep -Fxq 'https://www.starsnap.kr/__starsnap_external_verify__/path?source=gith
 grep -Fxq 'https://starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://starsnap.kr/icon.png' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://api.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "7"
+grep -Fxq 'http://erp.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://erp.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://erp.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://erp.starsnap.kr/api/health/' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'http://sns.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://sns.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://sns.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "14"
 test ! -s "$FAKE_EXTERNAL_SLEEP_LOG"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=exposed_erp_health
+if exposed_erp_health_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected an exposed ERP health response to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public ERP detailed health endpoint was not hidden" <<<"$exposed_erp_health_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "22"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=exposed_erp_health_slash
+if exposed_erp_health_slash_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected an exposed trailing-slash ERP health response to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public ERP trailing-slash health endpoint was not hidden" <<<"$exposed_erp_health_slash_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "24"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
 : >"$FAKE_EXTERNAL_SLEEP_LOG"

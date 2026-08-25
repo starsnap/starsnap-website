@@ -38,6 +38,12 @@ function expectSuccess(response, label) {
   }
 }
 
+function expectStatus(response, status, label) {
+  if (response.status !== status) {
+    throw new Error(`${label} returned HTTP ${response.status}`);
+  }
+}
+
 function expectMarker(response, marker, label) {
   expectSuccess(response, label);
   if (!response.body.includes(Buffer.from(marker))) {
@@ -133,6 +139,66 @@ async function main() {
   }
   if (apiPayload.status !== "ok") {
     throw new Error("API HTTPS health status was not ok");
+  }
+
+  expectRedirect(
+    await caddyHttp("erp.starsnap.kr", "/api/health"),
+    308,
+    "https://erp.starsnap.kr/api/health",
+    "ERP HTTP redirect",
+  );
+  expectMarker(
+    await caddyHttps("erp.starsnap.kr", "/"),
+    "StarSnap ERP",
+    "ERP HTTPS root",
+  );
+  expectStatus(
+    await caddyHttps("erp.starsnap.kr", "/api/health"),
+    404,
+    "ERP public health",
+  );
+  expectStatus(
+    await caddyHttps("erp.starsnap.kr", "/api/health/"),
+    404,
+    "ERP public trailing-slash health",
+  );
+  const erpHealth = await request(http, {
+    hostname: "192.168.1.2",
+    port: 3001,
+    path: "/api/health",
+  });
+  expectSuccess(erpHealth, "ERP LAN health");
+  let erpPayload;
+  try {
+    erpPayload = JSON.parse(erpHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("ERP LAN health did not return JSON");
+  }
+  if (erpPayload.ok !== true) {
+    throw new Error("ERP LAN health status was not ok");
+  }
+
+  expectRedirect(
+    await caddyHttp("sns.starsnap.kr", "/api/health"),
+    308,
+    "https://sns.starsnap.kr/api/health",
+    "SNS HTTP redirect",
+  );
+  expectMarker(
+    await caddyHttps("sns.starsnap.kr", "/"),
+    "<title>StarSnap</title>",
+    "SNS HTTPS root",
+  );
+  const snsHealth = await caddyHttps("sns.starsnap.kr", "/api/health");
+  expectSuccess(snsHealth, "SNS HTTPS health");
+  let snsPayload;
+  try {
+    snsPayload = JSON.parse(snsHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("SNS HTTPS health did not return JSON");
+  }
+  if (snsPayload.status !== "ok") {
+    throw new Error("SNS HTTPS health status was not ok");
   }
 
   console.log("Internal route verification passed.");

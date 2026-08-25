@@ -70,14 +70,18 @@ jobs:
         run: |
           set -euo pipefail
           bash -n deploy/deploy-swarm.sh
+          bash -n deploy/github-runner-entrypoint.sh
           bash -n deploy/test-deploy-swarm.sh
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/repo:ro" \
             koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
             /repo/deploy/deploy-swarm.sh \
+            /repo/deploy/github-runner-entrypoint.sh \
             /repo/deploy/test-deploy-swarm.sh
           bash deploy/test-deploy-swarm.sh
           docker stack config --compose-file deploy/docker-stack.yml >/dev/null
+          docker stack config --compose-file deploy/github-runner-stack.bootstrap.yml >/dev/null
+          docker stack config --compose-file deploy/github-runner-stack.yml >/dev/null
 
   container-smoke:
     needs:
@@ -247,7 +251,6 @@ jobs:
       packages: read
 
     env:
-      DOCKER_CONFIG: /tmp/starsnap-docker-config-${{ github.run_id }}-${{ github.run_attempt }}
       STACK_NAME: starsnap-company
       SERVICE_NAME: starsnap-company_website
       STARSNAP_HEALTH_URL: ${{ vars.STARSNAP_HEALTH_URL }}
@@ -267,33 +270,6 @@ jobs:
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
           test -n "$STARSNAP_HEALTH_URL"
 
-      - name: Sign in to GHCR for Swarm pulls
-        shell: bash
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          install -d -m 700 "$DOCKER_CONFIG"
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
-
       - name: Deploy immutable image and verify rollout
         shell: bash
         run: bash deploy/deploy-swarm.sh
-
-      - name: Remove temporary registry credentials
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          docker logout ghcr.io >/dev/null 2>&1
-          if [[ "$DOCKER_CONFIG" != /tmp/starsnap-docker-config-* ]]; then
-            echo "Refusing to clean an unexpected Docker config path." >&2
-            exit 1
-          fi
-          if [[ -f "$DOCKER_CONFIG/config.json" ]]; then
-            rm -f -- "$DOCKER_CONFIG/config.json"
-          fi
-          if [[ -d "$DOCKER_CONFIG" ]]; then
-            rmdir -- "$DOCKER_CONFIG" 2>/dev/null || true
-          fi

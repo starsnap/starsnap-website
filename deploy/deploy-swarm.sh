@@ -247,7 +247,6 @@ deployment_started=true
 docker stack deploy \
   --compose-file "$rendered_stack" \
   --resolve-image never \
-  --with-registry-auth \
   "$STACK_NAME"
 
 if wait_for_service "$STARSNAP_WEBSITE_IMAGE" "$rollout_timeout_seconds" deploy; then

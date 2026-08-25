@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  runner:
+    image: ghcr.io/actions/actions-runner@sha256:3acad7b3f8d1b89d1442d97f403208ea50c25b4ddc8d311b01aa7872b2defa2d
+    init: true
+    user: "0:0"
+    command:
+      - /usr/local/bin/starsnap-runner-entrypoint
+    environment:
+      ACTIONS_RUNNER_RETURN_VERSION_DEPRECATED_EXIT_CODE: "1"
+      RUNNER_MANUALLY_TRAP_SIG: "1"
+      RUNNER_WAIT_FOR_DOCKER_IN_SECONDS: "30"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETPCAP
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: volume
+        source: runner_state
+        target: /runner-state
+    configs:
+      - source: runner_entrypoint
+        target: /usr/local/bin/starsnap-runner-entrypoint
+        uid: "0"
+        gid: "0"
+        mode: 0555
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test -s /home/runner/.runner && pgrep -f '/home/runner/bin/Runner.Listener run' >/dev/null
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    stop_grace_period: 2m
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.starsnap.actions-runner == true
+      restart_policy:
+        condition: any
+        delay: 10s
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 3m
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        monitor: 3m
+      resources:
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+        limits:
+          cpus: "1.00"
+          memory: 1G
+
+volumes:
+  runner_state:
+    name: starsnap_actions_runner_state
+    driver: local
+
+configs:
+  runner_entrypoint:
+    external: true
+    name: starsnap_runner_entrypoint_v2

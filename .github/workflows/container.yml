@@ -1,15 +1,17 @@
-name: Publish container image
+name: Build, verify, publish, and deploy container
 
 on:
   push:
     branches:
       - main
     paths:
+      - ".github/actionlint.yaml"
       - ".github/workflows/container.yml"
       - ".dockerignore"
       - ".openai/hosting.json"
       - "app/**"
       - "Dockerfile"
+      - "deploy/**"
       - "next.config.ts"
       - "package.json"
       - "package-lock.json"
@@ -23,7 +25,7 @@ permissions:
 
 concurrency:
   group: container-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   quality:
@@ -32,12 +34,22 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
+
+      - name: Lint GitHub Actions workflow
+        run: >-
+          docker run --rm
+          --volume "$GITHUB_WORKSPACE:/repo:ro"
+          --workdir /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -color
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -51,43 +63,58 @@ jobs:
       - name: Verify standalone output
         run: test -f dist/standalone/server.js
 
+      - name: Validate deployment files
+        shell: bash
+        env:
+          STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          set -euo pipefail
+          bash -n deploy/deploy-swarm.sh
+          bash -n deploy/test-deploy-swarm.sh
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/repo:ro" \
+            koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            /repo/deploy/deploy-swarm.sh \
+            /repo/deploy/test-deploy-swarm.sh
+          bash deploy/test-deploy-swarm.sh
+          docker stack config --compose-file deploy/docker-stack.yml >/dev/null
+
   container-smoke:
-    needs: quality
+    needs:
+      - quality
+      - publish
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            suffix: amd64
-          - platform: linux/arm64
-            suffix: arm64
+        platform:
+          - linux/amd64
+          - linux/arm64
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
       - name: Enable multi-platform execution
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Sign in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build test image
-        run: >-
-          docker buildx build
-          --platform "${{ matrix.platform }}"
-          --load
-          --tag "starsnap-website:smoke-${{ matrix.suffix }}"
-          .
-
-      - name: Smoke-test container
+      - name: Smoke-test published container
         shell: bash
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.digest }}
         run: |
           set -euo pipefail
 
-          container_id="$(docker run --detach --publish 3102:3000 "starsnap-website:smoke-${{ matrix.suffix }}")"
+          container_id="$(docker run --detach --platform "${{ matrix.platform }}" --publish 3102:3000 "$IMAGE_REF")"
           cleanup() {
             docker rm --force "$container_id" >/dev/null 2>&1 || true
           }
@@ -113,18 +140,21 @@ jobs:
           test "$(docker exec "$container_id" id -u)" = "1000"
 
   publish:
-    needs:
-      - quality
-      - container-smoke
+    needs: quality
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
       packages: write
 
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Enable multi-platform builds
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -146,12 +176,12 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,prefix=sha-,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and publish image
+        id: publish
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -163,3 +193,107 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+  promote:
+    needs:
+      - publish
+      - container-smoke
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote verified digest to latest
+        shell: bash
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.digest }}
+          LATEST_REF: ghcr.io/${{ github.repository }}:latest
+        run: docker buildx imagetools create --tag "$LATEST_REF" "$IMAGE_REF"
+
+  deploy:
+    needs:
+      - publish
+      - container-smoke
+      - promote
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      github.ref == 'refs/heads/main' &&
+      vars.SWARM_DEPLOY_ENABLED == 'true'
+    runs-on:
+      group: starsnap-production
+      labels: starsnap-swarm
+    environment: production
+    timeout-minutes: 15
+
+    concurrency:
+      group: starsnap-company-production
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      DOCKER_CONFIG: /tmp/starsnap-docker-config-${{ github.run_id }}-${{ github.run_attempt }}
+      STACK_NAME: starsnap-company
+      SERVICE_NAME: starsnap-company_website
+      STARSNAP_HEALTH_URL: ${{ vars.STARSNAP_HEALTH_URL }}
+      STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@${{ needs.publish.outputs.digest }}
+
+    steps:
+      - name: Check out deployment files
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: deploy
+
+      - name: Verify deployment target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
+          test -n "$STARSNAP_HEALTH_URL"
+
+      - name: Sign in to GHCR for Swarm pulls
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$DOCKER_CONFIG"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+
+      - name: Deploy immutable image and verify rollout
+        shell: bash
+        run: bash deploy/deploy-swarm.sh
+
+      - name: Remove temporary registry credentials
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker logout ghcr.io >/dev/null 2>&1
+          if [[ "$DOCKER_CONFIG" != /tmp/starsnap-docker-config-* ]]; then
+            echo "Refusing to clean an unexpected Docker config path." >&2
+            exit 1
+          fi
+          if [[ -f "$DOCKER_CONFIG/config.json" ]]; then
+            rm -f -- "$DOCKER_CONFIG/config.json"
+          fi
+          if [[ -d "$DOCKER_CONFIG" ]]; then
+            rmdir -- "$DOCKER_CONFIG" 2>/dev/null || true
+          fi

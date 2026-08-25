@@ -75,3 +75,7 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+
+# one-time deployment bootstrap material
+/deploy/*.secret
+/deploy/*.token

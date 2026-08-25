@@ -26,6 +26,8 @@ npm-debug.log*
 *.pkcs12
 *.jks
 *.keystore
+deploy/*.secret
+deploy/*.token
 id_rsa
 id_dsa
 id_ecdsa

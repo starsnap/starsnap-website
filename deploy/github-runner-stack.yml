@@ -78,4 +78,4 @@ volumes:
 configs:
   runner_entrypoint:
     external: true
-    name: starsnap_runner_entrypoint_v2
+    name: starsnap_runner_entrypoint_v3

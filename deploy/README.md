@@ -33,7 +33,7 @@ The runner itself is defined by:
   secret only for the first registration.
 - `github-runner-stack.yml`: steady-state service with no registration secret.
 
-Create the versioned Swarm config `starsnap_runner_entrypoint_v2` from the
+Create the versioned Swarm config `starsnap_runner_entrypoint_v3` from the
 entrypoint file, add `starsnap.actions-runner=true` only to the intended ARM64
 manager, and deploy the bootstrap stack once as `starsnap-actions-runner`.
 After the runner is online, immediately replace the stack with the steady-state

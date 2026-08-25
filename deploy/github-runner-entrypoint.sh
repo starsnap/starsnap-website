@@ -50,6 +50,10 @@ if [[ "$(id -u)" != "$runner_uid" ]]; then
   exit 1
 fi
 
+# Docker assigns HOME from the service's initial root user. Reset it after
+# dropping privileges so actions such as checkout never try to read /root.
+export HOME="$runner_home"
+
 if ! docker info --format '{{.Swarm.ControlAvailable}}' | grep -Fxq true; then
   echo "Runner must be attached to a Swarm manager socket." >&2
   exit 1

@@ -74,8 +74,10 @@ additional collaborators write access.
 
 The same `starsnap-company` stack runs the official Caddy `2.10.2-alpine`
 multi-platform image pinned by immutable manifest digest. Caddy is constrained
-to the Swarm manager and publishes TCP ports 80 and 443. The website keeps its
-existing port 3000 publication for direct internal diagnostics.
+to the manager carrying `starsnap.actions-runner=true`, which keeps its local
+certificate volumes on the same node, and publishes TCP ports 80 and 443. The
+website keeps its existing port 3000 publication for direct internal
+diagnostics.
 
 `Caddyfile` provides these routes:
 
@@ -94,9 +96,13 @@ copy their contents into the repository.
 The deploy script validates the committed Caddyfile with the pinned Caddy image
 before changing the stack. It then creates a content-addressed Docker Swarm
 config, verifies both services at `1/1`, and checks the apex HTTPS upgrade plus
-the one-hop `www` redirect over the internal port-80 origin. On a failed update,
-it restores or removes each service according to the pre-deployment state and
-removes a newly created config when it is no longer referenced.
+the one-hop `www` redirect over the internal port-80 origin. It also connects to
+the manager with `curl --resolve` while retaining the public host name for SNI
+and certificate validation, then verifies the apex content, icon, and HTTPS
+`www` redirect. On a failed update, it compares the complete previous Caddy
+service specification before rolling back, restores or removes each service
+according to the pre-deployment state, and removes a newly created config when
+it is no longer referenced.
 
 Before the first deployment, public DNS must point both names at the router's
 public IPv4 address, and the router must forward TCP 80 and 443 to the manager's

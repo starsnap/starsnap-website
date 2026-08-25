@@ -11,6 +11,7 @@ test_root="$(mktemp -d)"
 export FAKE_SWARM_STATE="$test_root/swarm"
 export FAKE_FAIL_CANDIDATE=false
 export FAKE_FAIL_CADDY_REDIRECT=false
+export FAKE_FAIL_CADDY_TLS=false
 export FAKE_SERVICE_LIST_ERROR=false
 
 cleanup() {
@@ -31,6 +32,9 @@ reset_state() {
   rm -f -- "$FAKE_SWARM_STATE/caddy-config"
   rm -f -- "$FAKE_SWARM_STATE/caddy-update-state"
   rm -f -- "$FAKE_SWARM_STATE/caddy-replicas"
+  rm -f -- "$FAKE_SWARM_STATE/caddy-spec"
+  rm -f -- "$FAKE_SWARM_STATE/previous-caddy-config"
+  rm -f -- "$FAKE_SWARM_STATE/previous-caddy-spec"
   find "$FAKE_SWARM_STATE/configs" -type f -delete
   rm -f -- "$FAKE_SWARM_STATE/rollback-requested"
   rm -f -- "$FAKE_SWARM_STATE/caddy-rollback-requested"
@@ -38,7 +42,25 @@ reset_state() {
   rm -f -- "$FAKE_SWARM_STATE/pulled-image"
   export FAKE_FAIL_CANDIDATE=false
   export FAKE_FAIL_CADDY_REDIRECT=false
+  export FAKE_FAIL_CADDY_TLS=false
   export FAKE_SERVICE_LIST_ERROR=false
+}
+
+seed_previous_caddy() {
+  local config_digest=""
+  local config_name=""
+
+  config_digest="$(sha256sum deploy/Caddyfile | awk '{print $1}')"
+  config_name="starsnap-company_caddyfile_${config_digest:0:16}"
+  printf '%s' "$caddy_image" >"$FAKE_SWARM_STATE/caddy-image"
+  printf '%s' "$config_name" >"$FAKE_SWARM_STATE/caddy-config"
+  printf '%s' "$config_name" >"$FAKE_SWARM_STATE/previous-caddy-config"
+  printf '%s' "completed" >"$FAKE_SWARM_STATE/caddy-update-state"
+  printf '%s' "1/1" >"$FAKE_SWARM_STATE/caddy-replicas"
+  printf '%s' '{"Name":"starsnap-company_caddy","Labels":{"spec":"previous"}}' >"$FAKE_SWARM_STATE/caddy-spec"
+  cp "$FAKE_SWARM_STATE/caddy-spec" "$FAKE_SWARM_STATE/previous-caddy-spec"
+  cp deploy/Caddyfile "$FAKE_SWARM_STATE/configs/$config_name.data"
+  printf '%s' "$config_digest" >"$FAKE_SWARM_STATE/configs/$config_name.digest"
 }
 
 docker() {
@@ -60,6 +82,8 @@ docker() {
         if [[ " $* " == *" --format "* ]]; then
           if [[ " $* " == *"ContainerSpec.Image"* ]]; then
             cat "$FAKE_SWARM_STATE/current-image"
+          elif [[ " $* " == *"{{json .Spec}}"* ]]; then
+            printf '%s' '{"Name":"starsnap-company_website"}'
           else
             cat "$FAKE_SWARM_STATE/update-state"
           fi
@@ -75,6 +99,8 @@ docker() {
           cat "$FAKE_SWARM_STATE/caddy-image"
         elif [[ " $* " == *"ContainerSpec.Configs"* ]]; then
           cat "$FAKE_SWARM_STATE/caddy-config"
+        elif [[ " $* " == *"{{json .Spec}}"* ]]; then
+          cat "$FAKE_SWARM_STATE/caddy-spec"
         else
           cat "$FAKE_SWARM_STATE/caddy-update-state"
         fi
@@ -116,6 +142,7 @@ docker() {
       else
         printf '%s' "$caddy_image" >"$FAKE_SWARM_STATE/caddy-image"
         cat "$FAKE_SWARM_STATE/previous-caddy-config" >"$FAKE_SWARM_STATE/caddy-config"
+        cat "$FAKE_SWARM_STATE/previous-caddy-spec" >"$FAKE_SWARM_STATE/caddy-spec"
         printf '%s' "rollback_completed" >"$FAKE_SWARM_STATE/caddy-update-state"
         touch "$FAKE_SWARM_STATE/caddy-rollback-requested"
       fi
@@ -129,10 +156,11 @@ docker() {
         rm -f -- "$FAKE_SWARM_STATE/caddy-config"
         rm -f -- "$FAKE_SWARM_STATE/caddy-update-state"
         rm -f -- "$FAKE_SWARM_STATE/caddy-replicas"
+        rm -f -- "$FAKE_SWARM_STATE/caddy-spec"
       fi
       ;;
     "stack config")
-      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\n' \
+      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\n' \
         "$caddy_image" "$STARSNAP_WEBSITE_IMAGE" "$CADDY_CONFIG_NAME"
       ;;
     "stack ls")
@@ -196,6 +224,7 @@ docker() {
       printf '%s' "$CADDY_CONFIG_NAME" >"$FAKE_SWARM_STATE/caddy-config"
       printf '%s' "completed" >"$FAKE_SWARM_STATE/caddy-update-state"
       printf '%s' "1/1" >"$FAKE_SWARM_STATE/caddy-replicas"
+      printf '%s' '{"Name":"starsnap-company_caddy","Labels":{"spec":"candidate"}}' >"$FAKE_SWARM_STATE/caddy-spec"
       ;;
     "stack rm")
       rm -f -- "$FAKE_SWARM_STATE/current-image"
@@ -203,6 +232,7 @@ docker() {
       rm -f -- "$FAKE_SWARM_STATE/caddy-config"
       rm -f -- "$FAKE_SWARM_STATE/caddy-update-state"
       rm -f -- "$FAKE_SWARM_STATE/caddy-replicas"
+      rm -f -- "$FAKE_SWARM_STATE/caddy-spec"
       rm -f -- "$FAKE_SWARM_STATE/stack-exists"
       touch "$FAKE_SWARM_STATE/stack-remove-requested"
       ;;
@@ -218,6 +248,7 @@ curl() {
   local host=""
   local output=""
   local current_image=""
+  local request_url=""
   local index=1
   local args=("$@")
 
@@ -228,9 +259,17 @@ curl() {
       dump_header="${args[index]}"
     elif [[ "${args[index - 1]}" == "--header" ]]; then
       host="${args[index]#Host: }"
+    elif [[ "${args[index - 1]}" == "--resolve" ]]; then
+      host="${args[index]%%:*}"
+    elif [[ "${args[index - 1]}" == http://* || "${args[index - 1]}" == https://* ]]; then
+      request_url="${args[index - 1]}"
     fi
     index=$((index + 1))
   done
+
+  if [[ "$FAKE_FAIL_CADDY_TLS" == "true" && "$request_url" == https://* ]]; then
+    return 60
+  fi
 
   if [[ -n "$dump_header" ]]; then
     if [[ "$FAKE_FAIL_CADDY_REDIRECT" == "true" ]]; then
@@ -293,6 +332,26 @@ test -e "$FAKE_SWARM_STATE/rollback-requested"
 test "$(cat "$FAKE_SWARM_STATE/current-image")" = "$previous_image"
 test ! -e "$FAKE_SWARM_STATE/caddy-image"
 test -z "$(find "$FAKE_SWARM_STATE/configs" -type f -name '*.data' -print -quit)"
+
+reset_state
+export FAKE_FAIL_CADDY_TLS=true
+if tls_failure_output="$(run_deploy 2>&1)"; then
+  echo "Expected an invalid Caddy TLS endpoint to fail the deployment." >&2
+  exit 1
+fi
+grep -Fq "Timed out waiting for the Caddy deploy operation" <<<"$tls_failure_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+
+reset_state
+seed_previous_caddy
+export FAKE_FAIL_CADDY_TLS=true
+if existing_caddy_failure_output="$(run_deploy 2>&1)"; then
+  echo "Expected a failed update to restore the full previous Caddy spec." >&2
+  exit 1
+fi
+grep -Fq "Caddy rollback verified" <<<"$existing_caddy_failure_output"
+test -e "$FAKE_SWARM_STATE/caddy-rollback-requested"
+cmp -s "$FAKE_SWARM_STATE/caddy-spec" "$FAKE_SWARM_STATE/previous-caddy-spec"
 
 reset_state
 rm -f -- "$FAKE_SWARM_STATE/current-image"

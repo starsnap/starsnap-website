@@ -25,6 +25,7 @@ rendered_stack=""
 previous_image=""
 previous_caddy_image=""
 previous_caddy_config=""
+previous_caddy_spec_digest=""
 deployment_started=false
 previous_service_exists=false
 previous_caddy_service_exists=false
@@ -34,6 +35,7 @@ service_names=""
 stack_names=""
 caddy_config_digest=""
 CADDY_CONFIG_NAME=""
+proxy_address=""
 
 if [[ ! "$STARSNAP_WEBSITE_IMAGE" =~ $expected_image_pattern ]]; then
   echo "Refusing to deploy a mutable or unexpected image reference." >&2
@@ -52,6 +54,13 @@ fi
 
 if [[ ! "$STARSNAP_PROXY_HEALTH_URL" =~ ^http://[^/?#]+/$ ]]; then
   echo "STARSNAP_PROXY_HEALTH_URL must be an HTTP origin ending in /." >&2
+  exit 1
+fi
+
+proxy_address="${STARSNAP_PROXY_HEALTH_URL#http://}"
+proxy_address="${proxy_address%/}"
+if [[ ! "$proxy_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  echo "STARSNAP_PROXY_HEALTH_URL must use the Swarm manager's IPv4 address." >&2
   exit 1
 fi
 
@@ -95,6 +104,16 @@ service_caddy_config() {
     "$caddy_service_name"
 }
 
+service_spec_digest() {
+  local target_service="$1"
+
+  docker service inspect \
+    --format '{{json .Spec}}' \
+    "$target_service" \
+    | sha256sum \
+    | awk '{print $1}'
+}
+
 verify_website_http_once() {
   curl --fail --silent --show-error --max-time 10 \
     --output "$response_file" \
@@ -129,6 +148,45 @@ verify_redirect() {
 verify_caddy_http_once() {
   verify_redirect "starsnap.kr" "308" "https://starsnap.kr/" \
     && verify_redirect "www.starsnap.kr" "301" "https://starsnap.kr/"
+}
+
+verify_caddy_https_once() {
+  if ! curl --fail --silent --show-error --max-time 15 \
+    --resolve "starsnap.kr:443:$proxy_address" \
+    --output "$response_file" \
+    "https://starsnap.kr/"; then
+    return 1
+  fi
+
+  if ! grep -Fq "StarSnap" "$response_file"; then
+    return 1
+  fi
+
+  if ! curl --fail --silent --show-error --max-time 15 \
+    --resolve "starsnap.kr:443:$proxy_address" \
+    --output /dev/null \
+    "https://starsnap.kr/icon.png"; then
+    return 1
+  fi
+
+  if ! curl --silent --show-error --max-time 15 \
+    --resolve "www.starsnap.kr:443:$proxy_address" \
+    --dump-header "$caddy_headers_file" \
+    --output /dev/null \
+    "https://www.starsnap.kr/"; then
+    return 1
+  fi
+
+  local location=""
+  local status=""
+  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$caddy_headers_file")"
+  location="$(awk 'tolower($1) == "location:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$caddy_headers_file")"
+
+  [[ "$status" == "301" && "$location" == "https://starsnap.kr/" ]]
+}
+
+verify_caddy_routes_once() {
+  verify_caddy_http_once && verify_caddy_https_once
 }
 
 wait_for_website() {
@@ -220,7 +278,7 @@ wait_for_caddy() {
       && "$replicas" == "1/1" ]]; then
       if [[ "$mode" == "deploy" && "$update_state" == "completed" ]] \
         || [[ "$mode" == "rollback" && "$update_state" =~ ^(completed|rollback_completed)$ ]]; then
-        if [[ "$verify_routes" != "true" ]] || verify_caddy_http_once; then
+        if [[ "$verify_routes" != "true" ]] || verify_caddy_routes_once; then
           return 0
         fi
       fi
@@ -303,6 +361,7 @@ restore_website_after_failure() {
 restore_caddy_after_failure() {
   local current_config=""
   local current_image=""
+  local current_spec_digest=""
 
   if [[ "$previous_caddy_service_exists" != "true" ]]; then
     remove_new_service "$caddy_service_name"
@@ -311,7 +370,8 @@ restore_caddy_after_failure() {
 
   current_image="$(service_image "$caddy_service_name" 2>/dev/null || true)"
   current_config="$(service_caddy_config 2>/dev/null || true)"
-  if [[ "$current_image" != "$previous_caddy_image" || "$current_config" != "$previous_caddy_config" ]]; then
+  current_spec_digest="$(service_spec_digest "$caddy_service_name" 2>/dev/null || true)"
+  if [[ "$current_spec_digest" != "$previous_caddy_spec_digest" ]]; then
     echo "Requesting Caddy rollback to the previous service specification." >&2
     if ! docker service rollback --detach "$caddy_service_name" >&2; then
       echo "Swarm rejected the Caddy rollback request." >&2
@@ -321,7 +381,8 @@ restore_caddy_after_failure() {
     echo "Swarm already restored the previous Caddy specification; verifying recovery." >&2
   fi
 
-  if wait_for_caddy "$previous_caddy_image" "$previous_caddy_config" "$rollback_timeout_seconds" rollback false; then
+  if wait_for_caddy "$previous_caddy_image" "$previous_caddy_config" "$rollback_timeout_seconds" rollback false \
+    && [[ "$(service_spec_digest "$caddy_service_name" 2>/dev/null || true)" == "$previous_caddy_spec_digest" ]]; then
     echo "Caddy rollback verified: $previous_caddy_config" >&2
     return 0
   fi
@@ -484,6 +545,7 @@ if grep -Fxq "$caddy_service_name" <<<"$service_names"; then
   previous_caddy_service_exists=true
   previous_caddy_image="$(service_image "$caddy_service_name")"
   previous_caddy_config="$(service_caddy_config)"
+  previous_caddy_spec_digest="$(service_spec_digest "$caddy_service_name")"
 fi
 
 if ! docker pull "$STARSNAP_WEBSITE_IMAGE" >/dev/null; then
@@ -524,6 +586,11 @@ fi
 
 if [[ "$(grep -Fc "node.role == manager" "$rendered_stack")" -lt 2 ]]; then
   echo "Rendered stack must keep both services on the Swarm manager." >&2
+  exit 1
+fi
+
+if ! grep -Fq "node.labels.starsnap.actions-runner == true" "$rendered_stack"; then
+  echo "Rendered stack must pin Caddy's local certificate volumes to the runner manager." >&2
   exit 1
 fi
 

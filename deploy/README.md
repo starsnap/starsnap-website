@@ -14,10 +14,14 @@ The deploy job is disabled until all of the following exist:
   access to `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`.
 - A repository variable named `STARSNAP_HEALTH_URL` whose value is the published
   site root, such as `http://192.168.1.103:3000/`.
+- A repository variable named `STARSNAP_PROXY_HEALTH_URL` whose value is the
+  Swarm manager's internal HTTP origin on port 80, such as
+  `http://192.168.1.103/`. The deploy script sends explicit `starsnap.kr` and
+  `www.starsnap.kr` Host headers to this origin, so it does not depend on router
+  hairpin NAT or public DNS during rollout verification.
 - A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
-- A GitHub environment named `production` that requires an independent reviewer,
-  prevents self-review, permits only `main`, and does not allow administrators to
-  bypass its protection rules.
+- A GitHub environment named `production` that permits only `main` and follows
+  the organization's chosen reviewer and administrator-bypass policy.
 
 The runner registration token is one-time bootstrap material. Never commit it,
 write it into a stack file, or leave it in a long-lived service environment.
@@ -66,6 +70,41 @@ additional collaborators write access.
 - On verification failure, the workflow requests a rollback when a previous
   service specification exists.
 
-The GHCR package is public. The deploy job deliberately performs no registry
-login and does not propagate registry credentials into the Swarm service
-specification, so later rescheduling can pull the immutable digest anonymously.
+## Caddy edge service
+
+The same `starsnap-company` stack runs the official Caddy `2.10.2-alpine`
+multi-platform image pinned by immutable manifest digest. Caddy is constrained
+to the Swarm manager and publishes TCP ports 80 and 443. The website keeps its
+existing port 3000 publication for direct internal diagnostics.
+
+`Caddyfile` provides these routes:
+
+- `http://starsnap.kr/*` is upgraded automatically to HTTPS by Caddy.
+- `https://starsnap.kr/*` is reverse-proxied to `website:3000` on the stack
+  overlay network.
+- Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
+  the equivalent `https://starsnap.kr` URI.
+
+Automatic HTTPS obtains and renews public certificates without a committed API
+token. Caddy's `/data` and `/config` directories use manager-local named volumes
+so ACME account material, private keys, and certificates survive service and
+stack redeployments. Back up those volumes as sensitive production state; never
+copy their contents into the repository.
+
+The deploy script validates the committed Caddyfile with the pinned Caddy image
+before changing the stack. It then creates a content-addressed Docker Swarm
+config, verifies both services at `1/1`, and checks the apex HTTPS upgrade plus
+the one-hop `www` redirect over the internal port-80 origin. On a failed update,
+it restores or removes each service according to the pre-deployment state and
+removes a newly created config when it is no longer referenced.
+
+Before the first deployment, public DNS must point both names at the router's
+public IPv4 address, and the router must forward TCP 80 and 443 to the manager's
+ports 80 and 443. Keep port 80 reachable because ACME validation and the required
+HTTP-to-HTTPS redirect use it. Avoid publishing an AAAA record unless IPv6 also
+routes those ports to this Caddy service.
+
+The GHCR package is public. The deploy job uses the workflow-scoped
+`GITHUB_TOKEN` for its registry login and forwards that ephemeral authorization
+to Swarm during deployment. No long-lived registry credential or Caddy secret is
+stored in Git.

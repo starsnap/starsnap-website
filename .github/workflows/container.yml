@@ -66,6 +66,7 @@ jobs:
       - name: Validate deployment files
         shell: bash
         env:
+          CADDY_CONFIG_NAME: starsnap-company_caddyfile_ci_validation
           STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@sha256:0000000000000000000000000000000000000000000000000000000000000000
         run: |
           set -euo pipefail
@@ -254,6 +255,7 @@ jobs:
       STACK_NAME: starsnap-company
       SERVICE_NAME: starsnap-company_website
       STARSNAP_HEALTH_URL: ${{ vars.STARSNAP_HEALTH_URL }}
+      STARSNAP_PROXY_HEALTH_URL: ${{ vars.STARSNAP_PROXY_HEALTH_URL }}
       STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@${{ needs.publish.outputs.digest }}
 
     steps:
@@ -269,6 +271,7 @@ jobs:
           set -euo pipefail
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
           test -n "$STARSNAP_HEALTH_URL"
+          test -n "$STARSNAP_PROXY_HEALTH_URL"
 
       - name: Sign in to GHCR for deployment
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

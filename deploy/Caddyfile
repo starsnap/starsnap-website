@@ -1,0 +1,16 @@
+{
+	admin 127.0.0.1:2019
+}
+
+starsnap.kr {
+	encode zstd gzip
+	reverse_proxy website:3000
+}
+
+www.starsnap.kr {
+	redir https://starsnap.kr{uri} permanent
+}
+
+http://www.starsnap.kr {
+	redir https://starsnap.kr{uri} permanent
+}

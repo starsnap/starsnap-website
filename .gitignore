@@ -79,3 +79,7 @@ next-env.d.ts
 # one-time deployment bootstrap material
 /deploy/*.secret
 /deploy/*.token
+
+# local exports of Caddy certificate and account state
+/deploy/caddy-data/
+/deploy/caddy-config/

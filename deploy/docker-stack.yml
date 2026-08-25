@@ -61,3 +61,86 @@ services:
         limits:
           cpus: "0.50"
           memory: 512M
+
+  caddy:
+    image: docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+        mode: 0444
+
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: ingress
+
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget --quiet --output-document=/dev/null http://127.0.0.1:2019/config/ || exit 1"
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    stop_grace_period: 20s
+
+    deploy:
+      replicas: 1
+
+      placement:
+        constraints:
+          - node.role == manager
+
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 90s
+        max_failure_ratio: 0
+
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        monitor: 90s
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      resources:
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+configs:
+  caddyfile:
+    external: true
+    name: ${CADDY_CONFIG_NAME:?CADDY_CONFIG_NAME is required}
+
+volumes:
+  caddy_data:
+  caddy_config:

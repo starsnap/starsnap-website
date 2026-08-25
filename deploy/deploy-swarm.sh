@@ -243,6 +243,11 @@ if ! grep -Fq "image: $STARSNAP_WEBSITE_IMAGE" "$rendered_stack"; then
   exit 1
 fi
 
+if ! grep -Fq "node.role == manager" "$rendered_stack"; then
+  echo "Rendered stack must keep the website on the pre-pulled Swarm manager." >&2
+  exit 1
+fi
+
 if ! docker pull "$STARSNAP_WEBSITE_IMAGE" >/dev/null; then
   echo "Could not pull the verified image on the Swarm manager." >&2
   exit 1

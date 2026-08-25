@@ -69,7 +69,7 @@ docker() {
       rm -f -- "$FAKE_SWARM_STATE/current-image"
       ;;
     "stack config")
-      printf 'services:\n  website:\n    image: %s\n' "$STARSNAP_WEBSITE_IMAGE"
+      printf 'services:\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\n' "$STARSNAP_WEBSITE_IMAGE"
       ;;
     "stack ls")
       if [[ -f "$FAKE_SWARM_STATE/stack-exists" ]]; then

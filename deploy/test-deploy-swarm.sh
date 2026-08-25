@@ -5,7 +5,8 @@ set -euo pipefail
 readonly candidate_image="ghcr.io/starsnap/starsnap-website@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 readonly previous_image="ghcr.io/starsnap/starsnap-website@sha256:2222222222222222222222222222222222222222222222222222222222222222"
 readonly caddy_image="docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
-export candidate_image previous_image caddy_image
+readonly caddy_service_image="${caddy_image#docker.io/library/}"
+export candidate_image previous_image caddy_image caddy_service_image
 
 test_root="$(mktemp -d)"
 export FAKE_SWARM_STATE="$test_root/swarm"
@@ -17,6 +18,7 @@ export FAKE_API_NETWORK_MISSING=false
 export FAKE_API_SERVICE_NETWORK_MISSING=false
 export FAKE_RUNNER_NODE_LABEL=true
 export FAKE_RUNNER_NODE_IDS=fake-runner-node-id
+export FAKE_CADDY_SERVICE_IMAGE="$caddy_service_image"
 
 cleanup() {
   if [[ "$test_root" == /tmp/* || "$test_root" == /var/folders/* ]]; then
@@ -52,6 +54,7 @@ reset_state() {
   export FAKE_API_SERVICE_NETWORK_MISSING=false
   export FAKE_RUNNER_NODE_LABEL=true
   export FAKE_RUNNER_NODE_IDS=fake-runner-node-id
+  export FAKE_CADDY_SERVICE_IMAGE="$caddy_service_image"
 }
 
 seed_previous_caddy() {
@@ -60,7 +63,7 @@ seed_previous_caddy() {
 
   config_digest="$(sha256sum deploy/Caddyfile | awk '{print $1}')"
   config_name="starsnap-company_caddyfile_${config_digest:0:16}"
-  printf '%s' "$caddy_image" >"$FAKE_SWARM_STATE/caddy-image"
+  printf '%s' "$caddy_service_image" >"$FAKE_SWARM_STATE/caddy-image"
   printf '%s' "$config_name" >"$FAKE_SWARM_STATE/caddy-config"
   printf '%s' "$config_name" >"$FAKE_SWARM_STATE/previous-caddy-config"
   printf '%s' "completed" >"$FAKE_SWARM_STATE/caddy-update-state"
@@ -215,7 +218,7 @@ docker() {
         printf '%s' "rollback_completed" >"$FAKE_SWARM_STATE/update-state"
         touch "$FAKE_SWARM_STATE/rollback-requested"
       else
-        printf '%s' "$caddy_image" >"$FAKE_SWARM_STATE/caddy-image"
+        printf '%s' "$caddy_service_image" >"$FAKE_SWARM_STATE/caddy-image"
         cat "$FAKE_SWARM_STATE/previous-caddy-config" >"$FAKE_SWARM_STATE/caddy-config"
         cat "$FAKE_SWARM_STATE/previous-caddy-spec" >"$FAKE_SWARM_STATE/caddy-spec"
         printf '%s' "rollback_completed" >"$FAKE_SWARM_STATE/caddy-update-state"
@@ -301,7 +304,7 @@ docker() {
       touch "$FAKE_SWARM_STATE/stack-exists"
       printf '%s' "$STARSNAP_WEBSITE_IMAGE" >"$FAKE_SWARM_STATE/current-image"
       printf '%s' "completed" >"$FAKE_SWARM_STATE/update-state"
-      printf '%s' "$caddy_image" >"$FAKE_SWARM_STATE/caddy-image"
+      printf '%s' "$FAKE_CADDY_SERVICE_IMAGE" >"$FAKE_SWARM_STATE/caddy-image"
       printf '%s' "$CADDY_CONFIG_NAME" >"$FAKE_SWARM_STATE/caddy-config"
       printf '%s' "completed" >"$FAKE_SWARM_STATE/caddy-update-state"
       printf '%s' "1/1" >"$FAKE_SWARM_STATE/caddy-replicas"
@@ -347,6 +350,20 @@ grep -Fq "Caddy verified: $caddy_image" <<<"$success_output"
 test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 test -e "$FAKE_SWARM_STATE/caddy-image"
 test -e "$FAKE_SWARM_STATE/caddy-config"
+test "$(cat "$FAKE_SWARM_STATE/caddy-image")" = "$caddy_service_image"
+test "$caddy_service_image" != "$caddy_image"
+
+reset_state
+export FAKE_CADDY_SERVICE_IMAGE="registry.invalid/library/$caddy_service_image"
+if wrong_caddy_repository_output="$(run_deploy 2>&1)"; then
+  echo "Expected the same Caddy digest from another repository to be rejected." >&2
+  exit 1
+fi
+grep -Fq "Timed out waiting for the Caddy deploy operation" \
+  <<<"$wrong_caddy_repository_output"
+grep -Fq "Website rollback verified: $previous_image" \
+  <<<"$wrong_caddy_repository_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
 
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then

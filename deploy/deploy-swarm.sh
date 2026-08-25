@@ -81,6 +81,43 @@ service_image() {
     "$target_service"
 }
 
+normalize_docker_hub_library_image() {
+  local image_reference="$1"
+
+  case "$image_reference" in
+    docker.io/library/*)
+      image_reference="${image_reference#docker.io/library/}"
+      ;;
+    index.docker.io/library/*)
+      image_reference="${image_reference#index.docker.io/library/}"
+      ;;
+    library/*)
+      image_reference="${image_reference#library/}"
+      ;;
+  esac
+
+  # Only canonicalize immutable, single-component Docker Hub official images.
+  # The repository, optional tag, digest algorithm, and digest remain part of
+  # the comparison; this must never degrade into a digest-only match.
+  if [[ ! "$image_reference" =~ ^[a-z0-9][a-z0-9._-]*(:[A-Za-z0-9_][A-Za-z0-9._-]*)?@sha256:[0-9a-f]{64}$ ]]; then
+    return 1
+  fi
+
+  printf 'docker.io/library/%s\n' "$image_reference"
+}
+
+docker_hub_library_images_match() {
+  local actual_image="$1"
+  local expected_image="$2"
+  local normalized_actual=""
+  local normalized_expected=""
+
+  normalized_actual="$(normalize_docker_hub_library_image "$actual_image")" || return 1
+  normalized_expected="$(normalize_docker_hub_library_image "$expected_image")" || return 1
+
+  [[ "$normalized_actual" == "$normalized_expected" ]]
+}
+
 service_replicas() {
   local target_service="$1"
 
@@ -247,8 +284,8 @@ wait_for_caddy() {
         ;;
     esac
 
-    if [[ "$current_image" == "$expected_image" \
-      && "$current_config" == "$expected_config" \
+    if docker_hub_library_images_match "$current_image" "$expected_image" \
+      && [[ "$current_config" == "$expected_config" \
       && "$replicas" == "1/1" \
       && "$health_status" == "healthy" ]]; then
       if [[ "$mode" == "deploy" && "$update_state" == "completed" ]] \

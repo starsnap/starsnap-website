@@ -12,8 +12,9 @@ The deploy job is disabled until all of the following exist:
   `starsnap-production` runner group. The deploy job schedules by this group
   alone; the `starsnap-swarm` custom runner label is operational inventory
   metadata and is not part of `runs-on` matching.
-- The runner group must allow this public repository and must restrict workflow
-  access to `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`.
+- The runner group's repository access must explicitly include the public
+  `starsnap/starsnap-website` repository. Its separate workflow allowlist must
+  contain only `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`.
 - A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
 - A GitHub environment named `production` that permits only `main` and follows
   the organization's chosen reviewer and administrator-bypass policy.

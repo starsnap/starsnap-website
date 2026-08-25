@@ -243,10 +243,16 @@ if ! grep -Fq "image: $STARSNAP_WEBSITE_IMAGE" "$rendered_stack"; then
   exit 1
 fi
 
+if ! docker pull "$STARSNAP_WEBSITE_IMAGE" >/dev/null; then
+  echo "Could not pull the verified image on the Swarm manager." >&2
+  exit 1
+fi
+
 deployment_started=true
 docker stack deploy \
   --compose-file "$rendered_stack" \
   --resolve-image never \
+  --with-registry-auth \
   "$STACK_NAME"
 
 if wait_for_service "$STARSNAP_WEBSITE_IMAGE" "$rollout_timeout_seconds" deploy; then

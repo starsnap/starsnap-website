@@ -270,6 +270,13 @@ jobs:
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
           test -n "$STARSNAP_HEALTH_URL"
 
+      - name: Sign in to GHCR for deployment
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy immutable image and verify rollout
         shell: bash
         run: bash deploy/deploy-swarm.sh

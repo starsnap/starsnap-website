@@ -26,6 +26,7 @@ reset_state() {
   touch "$FAKE_SWARM_STATE/stack-exists"
   rm -f -- "$FAKE_SWARM_STATE/rollback-requested"
   rm -f -- "$FAKE_SWARM_STATE/stack-remove-requested"
+  rm -f -- "$FAKE_SWARM_STATE/pulled-image"
 }
 
 docker() {
@@ -75,7 +76,18 @@ docker() {
         printf '%s\n' "starsnap-company"
       fi
       ;;
+    pull\ *)
+      printf '%s' "$2" >"$FAKE_SWARM_STATE/pulled-image"
+      ;;
     "stack deploy")
+      if [[ " $* " != *" --with-registry-auth "* ]]; then
+        echo "Expected registry credentials to be forwarded to Swarm." >&2
+        return 1
+      fi
+      if [[ "$(cat "$FAKE_SWARM_STATE/pulled-image")" != "$STARSNAP_WEBSITE_IMAGE" ]]; then
+        echo "Expected the immutable image to be pulled before deployment." >&2
+        return 1
+      fi
       touch "$FAKE_SWARM_STATE/stack-exists"
       printf '%s' "$STARSNAP_WEBSITE_IMAGE" >"$FAKE_SWARM_STATE/current-image"
       printf '%s' "completed" >"$FAKE_SWARM_STATE/update-state"

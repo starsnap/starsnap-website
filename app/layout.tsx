@@ -14,7 +14,13 @@ export const metadata: Metadata = {
   themeColor: '#f6f7fb',
   alternates: { canonical: '/' },
   icons: {
-    icon: [{ url: '/icon.png', type: 'image/png' }],
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon-32x32.png', type: 'image/png', sizes: '32x32' },
+      { url: '/favicon-16x16.png', type: 'image/png', sizes: '16x16' },
+      { url: '/icon.png', type: 'image/png', sizes: '1254x1254' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', type: 'image/png', sizes: '180x180' }],
   },
   openGraph: {
     title,

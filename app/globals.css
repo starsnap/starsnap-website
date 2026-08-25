@@ -58,11 +58,17 @@ section { scroll-margin-top: 88px; }
 }
 .brand-mark {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  fill: var(--ss-brand);
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  object-fit: cover;
 }
-.brand-mark-small { width: 18px; height: 18px; }
+.brand-mark-small {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
 .site-nav {
   display: flex;
   gap: var(--ss-space-8);

@@ -147,7 +147,8 @@ verify_redirect() {
 
 verify_caddy_http_once() {
   verify_redirect "starsnap.kr" "308" "https://starsnap.kr/" \
-    && verify_redirect "www.starsnap.kr" "301" "https://starsnap.kr/"
+    && verify_redirect "www.starsnap.kr" "301" "https://starsnap.kr/" \
+    && verify_redirect "api.starsnap.kr" "308" "https://api.starsnap.kr/"
 }
 
 verify_caddy_https_once() {
@@ -166,6 +167,17 @@ verify_caddy_https_once() {
     --resolve "starsnap.kr:443:$proxy_address" \
     --output /dev/null \
     "https://starsnap.kr/icon.png"; then
+    return 1
+  fi
+
+  if ! curl --fail --silent --show-error --max-time 15 \
+    --resolve "api.starsnap.kr:443:$proxy_address" \
+    --output "$response_file" \
+    "https://api.starsnap.kr/api/health"; then
+    return 1
+  fi
+
+  if ! grep -Fq '"status":"ok"' "$response_file"; then
     return 1
   fi
 

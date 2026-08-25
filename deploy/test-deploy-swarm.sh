@@ -278,6 +278,8 @@ curl() {
       printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://starsnap.kr/\r\n\r\n' >"$dump_header"
     elif [[ "$host" == "www.starsnap.kr" ]]; then
       printf 'HTTP/1.1 301 Moved Permanently\r\nLocation: https://starsnap.kr/\r\n\r\n' >"$dump_header"
+    elif [[ "$host" == "api.starsnap.kr" ]]; then
+      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://api.starsnap.kr/\r\n\r\n' >"$dump_header"
     else
       return 22
     fi
@@ -290,7 +292,11 @@ curl() {
   fi
 
   if [[ -n "$output" && "$output" != "/dev/null" ]]; then
-    printf '%s' "StarSnap" >"$output"
+    if [[ "$request_url" == "https://api.starsnap.kr/api/health" ]]; then
+      printf '%s' '{"status":"ok"}' >"$output"
+    else
+      printf '%s' "StarSnap" >"$output"
+    fi
   fi
 }
 

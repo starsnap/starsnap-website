@@ -7,6 +7,11 @@ starsnap.kr {
 	reverse_proxy website:3000
 }
 
+api.starsnap.kr {
+	encode zstd gzip
+	reverse_proxy 192.168.1.103:8080
+}
+
 www.starsnap.kr {
 	redir https://starsnap.kr{uri} permanent
 }

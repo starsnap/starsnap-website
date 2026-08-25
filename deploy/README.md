@@ -84,6 +84,8 @@ diagnostics.
 - `http://starsnap.kr/*` is upgraded automatically to HTTPS by Caddy.
 - `https://starsnap.kr/*` is reverse-proxied to `website:3000` on the stack
   overlay network.
+- `https://api.starsnap.kr/*` is reverse-proxied to the live StarSnap API on
+  `192.168.1.103:8080`; Caddy preserves normal HTTP and WebSocket proxying.
 - Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
   the equivalent `https://starsnap.kr` URI.
 
@@ -99,16 +101,17 @@ config, verifies both services at `1/1`, and checks the apex HTTPS upgrade plus
 the one-hop `www` redirect over the internal port-80 origin. It also connects to
 the manager with `curl --resolve` while retaining the public host name for SNI
 and certificate validation, then verifies the apex content, icon, and HTTPS
-`www` redirect. On a failed update, it compares the complete previous Caddy
-service specification before rolling back, restores or removes each service
-according to the pre-deployment state, and removes a newly created config when
-it is no longer referenced.
+`www` redirect. It also checks `https://api.starsnap.kr/api/health` for the live
+API `{"status":"ok"}` response. On a failed update, it compares the complete
+previous Caddy service specification before rolling back, restores or removes
+each service according to the pre-deployment state, and removes a newly created
+config when it is no longer referenced.
 
-Before the first deployment, public DNS must point both names at the router's
-public IPv4 address, and the router must forward TCP 80 and 443 to the manager's
-ports 80 and 443. Keep port 80 reachable because ACME validation and the required
-HTTP-to-HTTPS redirect use it. Avoid publishing an AAAA record unless IPv6 also
-routes those ports to this Caddy service.
+Before the first deployment, public DNS must point the apex, `www`, and `api`
+names at the router's public IPv4 address, and the router must forward TCP 80 and
+443 to the manager's ports 80 and 443. Keep port 80 reachable because ACME
+validation and the required HTTP-to-HTTPS redirects use it. Avoid publishing an
+AAAA record unless IPv6 also routes those ports to this Caddy service.
 
 The GHCR package is public. The deploy job uses the workflow-scoped
 `GITHUB_TOKEN` for its registry login and forwards that ephemeral authorization

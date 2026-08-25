@@ -5,6 +5,7 @@ set -Eeuo pipefail
 readonly expected_image_pattern='^ghcr\.io/starsnap/starsnap-website@sha256:[0-9a-f]{64}$'
 readonly stack_file="deploy/docker-stack.yml"
 readonly caddy_config_file="deploy/Caddyfile"
+readonly internal_route_verifier="deploy/verify-internal.mjs"
 readonly caddy_image="docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
 readonly api_network_name="starsnap-main_app-net"
 readonly api_service_name="starsnap-main_api"
@@ -14,13 +15,8 @@ readonly cleanup_timeout_seconds="${STARSNAP_CLEANUP_TIMEOUT_SECONDS:-60}"
 
 : "${STACK_NAME:=starsnap-company}"
 : "${SERVICE_NAME:=${STACK_NAME}_website}"
-: "${STARSNAP_HEALTH_URL:?STARSNAP_HEALTH_URL is required}"
-: "${STARSNAP_PROXY_HEALTH_URL:?STARSNAP_PROXY_HEALTH_URL is required}"
 : "${STARSNAP_WEBSITE_IMAGE:?STARSNAP_WEBSITE_IMAGE is required}"
-: "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 
-readonly response_file="$RUNNER_TEMP/starsnap-index.html"
-readonly caddy_headers_file="$RUNNER_TEMP/starsnap-caddy-headers.txt"
 readonly caddy_service_name="${STACK_NAME}_caddy"
 
 rendered_stack=""
@@ -37,12 +33,16 @@ service_names=""
 stack_names=""
 caddy_config_digest=""
 CADDY_CONFIG_NAME=""
-proxy_address=""
 api_network_details=""
 api_network_driver=""
 api_network_scope=""
 api_network_id=""
 api_service_network_ids=""
+current_node_id=""
+current_node_runner_label=""
+labeled_runner_node_ids=""
+labeled_runner_node_count=""
+labeled_runner_node_id=""
 
 if [[ ! "$STARSNAP_WEBSITE_IMAGE" =~ $expected_image_pattern ]]; then
   echo "Refusing to deploy a mutable or unexpected image reference." >&2
@@ -59,20 +59,13 @@ if [[ "$SERVICE_NAME" != "${STACK_NAME}_website" ]]; then
   exit 1
 fi
 
-if [[ ! "$STARSNAP_PROXY_HEALTH_URL" =~ ^http://[^/?#]+/$ ]]; then
-  echo "STARSNAP_PROXY_HEALTH_URL must be an HTTP origin ending in /." >&2
-  exit 1
-fi
-
-proxy_address="${STARSNAP_PROXY_HEALTH_URL#http://}"
-proxy_address="${proxy_address%/}"
-if [[ ! "$proxy_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-  echo "STARSNAP_PROXY_HEALTH_URL must use the Swarm manager's IPv4 address." >&2
-  exit 1
-fi
-
 if [[ ! -f "$caddy_config_file" ]]; then
   echo "Missing Caddy configuration: $caddy_config_file" >&2
+  exit 1
+fi
+
+if [[ ! -f "$internal_route_verifier" ]]; then
+  echo "Missing internal route verifier: $internal_route_verifier" >&2
   exit 1
 fi
 
@@ -121,91 +114,50 @@ service_spec_digest() {
     | awk '{print $1}'
 }
 
-verify_website_http_once() {
-  curl --fail --silent --show-error --max-time 10 \
-    --output "$response_file" \
-    "$STARSNAP_HEALTH_URL" \
-    && grep -Fq "StarSnap" "$response_file" \
-    && curl --fail --silent --show-error --max-time 10 \
-      --output /dev/null \
-      "${STARSNAP_HEALTH_URL%/}/icon.png"
+service_container_id() {
+  local target_service="$1"
+  local container_count=""
+  local container_ids=""
+
+  container_ids="$(docker ps \
+    --filter "label=com.docker.swarm.service.name=$target_service" \
+    --filter "status=running" \
+    --format '{{.ID}}')"
+  container_count="$(awk 'NF { count++ } END { print count + 0 }' <<<"$container_ids")"
+
+  if [[ "$container_count" != "1" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$container_ids"
 }
 
-verify_redirect() {
-  local host="$1"
-  local expected_status="$2"
-  local expected_location="$3"
-  local location=""
-  local status=""
+service_health_status() {
+  local target_service="$1"
+  local container_id=""
 
-  if ! curl --silent --show-error --max-time 10 \
-    --dump-header "$caddy_headers_file" \
-    --output /dev/null \
-    --header "Host: $host" \
-    "$STARSNAP_PROXY_HEALTH_URL"; then
-    return 1
+  if ! container_id="$(service_container_id "$target_service")"; then
+    printf '%s\n' "not-ready"
+    return 0
   fi
 
-  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$caddy_headers_file")"
-  location="$(awk 'tolower($1) == "location:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$caddy_headers_file")"
-
-  [[ "$status" == "$expected_status" && "$location" == "$expected_location" ]]
+  docker inspect \
+    --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+    "$container_id"
 }
 
-verify_caddy_http_once() {
-  verify_redirect "starsnap.kr" "308" "https://starsnap.kr/" \
-    && verify_redirect "www.starsnap.kr" "301" "https://starsnap.kr/" \
-    && verify_redirect "api.starsnap.kr" "308" "https://api.starsnap.kr/"
-}
+verify_internal_routes_once() {
+  local website_container_id=""
 
-verify_caddy_https_once() {
-  if ! curl --fail --silent --show-error --max-time 15 \
-    --resolve "starsnap.kr:443:$proxy_address" \
-    --output "$response_file" \
-    "https://starsnap.kr/"; then
+  if ! website_container_id="$(service_container_id "$SERVICE_NAME")"; then
     return 1
   fi
 
-  if ! grep -Fq "StarSnap" "$response_file"; then
-    return 1
-  fi
-
-  if ! curl --fail --silent --show-error --max-time 15 \
-    --resolve "starsnap.kr:443:$proxy_address" \
-    --output /dev/null \
-    "https://starsnap.kr/icon.png"; then
-    return 1
-  fi
-
-  if ! curl --fail --silent --show-error --max-time 15 \
-    --resolve "api.starsnap.kr:443:$proxy_address" \
-    --output "$response_file" \
-    "https://api.starsnap.kr/api/health"; then
-    return 1
-  fi
-
-  if ! grep -Fq '"status":"ok"' "$response_file"; then
-    return 1
-  fi
-
-  if ! curl --silent --show-error --max-time 15 \
-    --resolve "www.starsnap.kr:443:$proxy_address" \
-    --dump-header "$caddy_headers_file" \
-    --output /dev/null \
-    "https://www.starsnap.kr/"; then
-    return 1
-  fi
-
-  local location=""
-  local status=""
-  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$caddy_headers_file")"
-  location="$(awk 'tolower($1) == "location:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$caddy_headers_file")"
-
-  [[ "$status" == "301" && "$location" == "https://starsnap.kr/" ]]
-}
-
-verify_caddy_routes_once() {
-  verify_caddy_http_once && verify_caddy_https_once
+  # The website task shares Caddy's stack overlay, so caddy:80/443 avoids the
+  # manager LAN and router hairpin. The Node verifier keeps normal CA and
+  # hostname validation by sending each public hostname as TLS servername.
+  docker exec --interactive "$website_container_id" \
+    node --input-type=module <"$internal_route_verifier"
 }
 
 wait_for_website() {
@@ -213,6 +165,7 @@ wait_for_website() {
   local timeout_seconds="$2"
   local mode="$3"
   local current_image=""
+  local health_status=""
   local deadline=$((SECONDS + timeout_seconds))
   local replicas=""
   local update_state=""
@@ -226,6 +179,7 @@ wait_for_website() {
     current_image="$(service_image "$SERVICE_NAME" 2>/dev/null || true)"
     replicas="$(service_replicas "$SERVICE_NAME" 2>/dev/null || true)"
     update_state="$(service_update_state "$SERVICE_NAME" 2>/dev/null || true)"
+    health_status="$(service_health_status "$SERVICE_NAME" 2>/dev/null || true)"
 
     case "$update_state" in
       paused|rollback_paused)
@@ -240,12 +194,12 @@ wait_for_website() {
         ;;
     esac
 
-    if [[ "$current_image" == "$expected_image" && "$replicas" == "1/1" ]]; then
+    if [[ "$current_image" == "$expected_image" \
+      && "$replicas" == "1/1" \
+      && "$health_status" == "healthy" ]]; then
       if [[ "$mode" == "deploy" && "$update_state" == "completed" ]] \
         || [[ "$mode" == "rollback" && "$update_state" =~ ^(completed|rollback_completed)$ ]]; then
-        if verify_website_http_once; then
-          return 0
-        fi
+        return 0
       fi
     fi
 
@@ -261,9 +215,9 @@ wait_for_caddy() {
   local expected_config="$2"
   local timeout_seconds="$3"
   local mode="$4"
-  local verify_routes="$5"
   local current_config=""
   local current_image=""
+  local health_status=""
   local deadline=$((SECONDS + timeout_seconds))
   local replicas=""
   local update_state=""
@@ -278,6 +232,7 @@ wait_for_caddy() {
     current_config="$(service_caddy_config 2>/dev/null || true)"
     replicas="$(service_replicas "$caddy_service_name" 2>/dev/null || true)"
     update_state="$(service_update_state "$caddy_service_name" 2>/dev/null || true)"
+    health_status="$(service_health_status "$caddy_service_name" 2>/dev/null || true)"
 
     case "$update_state" in
       paused|rollback_paused)
@@ -294,10 +249,11 @@ wait_for_caddy() {
 
     if [[ "$current_image" == "$expected_image" \
       && "$current_config" == "$expected_config" \
-      && "$replicas" == "1/1" ]]; then
+      && "$replicas" == "1/1" \
+      && "$health_status" == "healthy" ]]; then
       if [[ "$mode" == "deploy" && "$update_state" == "completed" ]] \
         || [[ "$mode" == "rollback" && "$update_state" =~ ^(completed|rollback_completed)$ ]]; then
-        if [[ "$verify_routes" != "true" ]] || verify_caddy_routes_once; then
+        if [[ "$mode" == "rollback" ]] || verify_internal_routes_once; then
           return 0
         fi
       fi
@@ -400,7 +356,7 @@ restore_caddy_after_failure() {
     echo "Swarm already restored the previous Caddy specification; verifying recovery." >&2
   fi
 
-  if wait_for_caddy "$previous_caddy_image" "$previous_caddy_config" "$rollback_timeout_seconds" rollback false \
+  if wait_for_caddy "$previous_caddy_image" "$previous_caddy_config" "$rollback_timeout_seconds" rollback \
     && [[ "$(service_spec_digest "$caddy_service_name" 2>/dev/null || true)" == "$previous_caddy_spec_digest" ]]; then
     echo "Caddy rollback verified: $previous_caddy_config" >&2
     return 0
@@ -537,8 +493,6 @@ on_exit() {
   if [[ -n "$rendered_stack" ]]; then
     rm -f -- "$rendered_stack"
   fi
-  rm -f -- "$response_file" "$caddy_headers_file"
-
   exit "$status"
 }
 
@@ -546,6 +500,44 @@ trap on_exit EXIT
 
 if [[ "$(docker info --format '{{.Swarm.ControlAvailable}}')" != "true" ]]; then
   echo "This job must run against a Docker Swarm manager." >&2
+  exit 1
+fi
+
+if ! current_node_id="$(docker info --format '{{.Swarm.NodeID}}')" \
+  || [[ -z "$current_node_id" ]]; then
+  echo "Could not determine the current Swarm manager node ID." >&2
+  exit 1
+fi
+
+if ! current_node_runner_label="$(docker node inspect \
+  --format '{{index .Spec.Labels "starsnap.actions-runner"}}' \
+  "$current_node_id")"; then
+  echo "Could not inspect the current Swarm manager node." >&2
+  exit 1
+fi
+
+if [[ "$current_node_runner_label" != "true" ]]; then
+  echo "Current Swarm manager must have starsnap.actions-runner=true." >&2
+  exit 1
+fi
+
+if ! labeled_runner_node_ids="$(docker node ls \
+  --filter 'node.label=starsnap.actions-runner=true' \
+  --format '{{.ID}}')"; then
+  echo "Could not list Swarm nodes carrying starsnap.actions-runner=true." >&2
+  exit 1
+fi
+
+labeled_runner_node_count="$(awk 'NF { count++ } END { print count + 0 }' \
+  <<<"$labeled_runner_node_ids")"
+if [[ "$labeled_runner_node_count" != "1" ]]; then
+  echo "Expected exactly one Swarm node with starsnap.actions-runner=true; found $labeled_runner_node_count." >&2
+  exit 1
+fi
+
+labeled_runner_node_id="$(awk 'NF { print $1; exit }' <<<"$labeled_runner_node_ids")"
+if [[ "$labeled_runner_node_id" != "$current_node_id" ]]; then
+  echo "The sole starsnap.actions-runner node must be the current manager ($current_node_id); found $labeled_runner_node_id." >&2
   exit 1
 fi
 
@@ -639,8 +631,8 @@ if [[ "$(grep -Fc "node.role == manager" "$rendered_stack")" -lt 2 ]]; then
   exit 1
 fi
 
-if ! grep -Fq "node.labels.starsnap.actions-runner == true" "$rendered_stack"; then
-  echo "Rendered stack must pin Caddy's local certificate volumes to the runner manager." >&2
+if [[ "$(grep -Fc "node.labels.starsnap.actions-runner == true" "$rendered_stack")" -lt 2 ]]; then
+  echo "Rendered stack must pin both services to the labeled runner manager." >&2
   exit 1
 fi
 
@@ -652,7 +644,7 @@ docker stack deploy \
   "$STACK_NAME"
 
 wait_for_website "$STARSNAP_WEBSITE_IMAGE" "$rollout_timeout_seconds" deploy
-wait_for_caddy "$caddy_image" "$CADDY_CONFIG_NAME" "$rollout_timeout_seconds" deploy true
+wait_for_caddy "$caddy_image" "$CADDY_CONFIG_NAME" "$rollout_timeout_seconds" deploy
 
 echo "Deployment verified: $STARSNAP_WEBSITE_IMAGE"
 echo "Caddy verified: $caddy_image ($CADDY_CONFIG_NAME)"

@@ -10,11 +10,13 @@ export candidate_image previous_image caddy_image
 test_root="$(mktemp -d)"
 export FAKE_SWARM_STATE="$test_root/swarm"
 export FAKE_FAIL_CANDIDATE=false
-export FAKE_FAIL_CADDY_REDIRECT=false
-export FAKE_FAIL_CADDY_TLS=false
+export FAKE_FAIL_CADDY_HEALTH=false
+export FAKE_FAIL_INTERNAL_ROUTES=false
 export FAKE_SERVICE_LIST_ERROR=false
 export FAKE_API_NETWORK_MISSING=false
 export FAKE_API_SERVICE_NETWORK_MISSING=false
+export FAKE_RUNNER_NODE_LABEL=true
+export FAKE_RUNNER_NODE_IDS=fake-runner-node-id
 
 cleanup() {
   if [[ "$test_root" == /tmp/* || "$test_root" == /var/folders/* ]]; then
@@ -43,11 +45,13 @@ reset_state() {
   rm -f -- "$FAKE_SWARM_STATE/stack-remove-requested"
   rm -f -- "$FAKE_SWARM_STATE/pulled-image"
   export FAKE_FAIL_CANDIDATE=false
-  export FAKE_FAIL_CADDY_REDIRECT=false
-  export FAKE_FAIL_CADDY_TLS=false
+  export FAKE_FAIL_CADDY_HEALTH=false
+  export FAKE_FAIL_INTERNAL_ROUTES=false
   export FAKE_SERVICE_LIST_ERROR=false
   export FAKE_API_NETWORK_MISSING=false
   export FAKE_API_SERVICE_NETWORK_MISSING=false
+  export FAKE_RUNNER_NODE_LABEL=true
+  export FAKE_RUNNER_NODE_IDS=fake-runner-node-id
 }
 
 seed_previous_caddy() {
@@ -72,10 +76,27 @@ docker() {
   local config_source=""
   local digest_label=""
   local target=""
+  local verifier_source=""
 
   case "$1 $2" in
     "info --format")
-      printf '%s\n' "true"
+      if [[ " $* " == *".Swarm.NodeID"* ]]; then
+        printf '%s\n' "fake-runner-node-id"
+      else
+        printf '%s\n' "true"
+      fi
+      ;;
+    "node inspect")
+      printf '%s\n' "$FAKE_RUNNER_NODE_LABEL"
+      ;;
+    "node ls")
+      if [[ " $* " != *" --filter node.label=starsnap.actions-runner=true "* \
+        || " $* " != *" --format {{.ID}} "* \
+        || " $* " == *" --no-trunc "* ]]; then
+        echo "Expected a supported full-ID node label query." >&2
+        return 1
+      fi
+      printf '%s\n' "$FAKE_RUNNER_NODE_IDS"
       ;;
     "service inspect")
       target="${!#}"
@@ -146,6 +167,47 @@ docker() {
       ;;
     "service ps")
       ;;
+    "ps --filter")
+      if [[ " $* " == *"com.docker.swarm.service.name=starsnap-company_website"* \
+        && -f "$FAKE_SWARM_STATE/current-image" ]]; then
+        printf '%s\n' "website-container"
+      elif [[ " $* " == *"com.docker.swarm.service.name=starsnap-company_caddy"* \
+        && -f "$FAKE_SWARM_STATE/caddy-image" ]]; then
+        printf '%s\n' "caddy-container"
+      fi
+      ;;
+    "inspect --format")
+      target="${!#}"
+      if [[ "$target" == "website-container" ]]; then
+        if [[ "$FAKE_FAIL_CANDIDATE" == "true" \
+          && "$(cat "$FAKE_SWARM_STATE/current-image")" == "$candidate_image" ]]; then
+          printf '%s\n' "unhealthy"
+        else
+          printf '%s\n' "healthy"
+        fi
+      elif [[ "$target" == "caddy-container" ]]; then
+        if [[ "$FAKE_FAIL_CADDY_HEALTH" == "true" \
+          && "$(cat "$FAKE_SWARM_STATE/caddy-spec")" == *'"spec":"candidate"'* ]]; then
+          printf '%s\n' "unhealthy"
+        else
+          printf '%s\n' "healthy"
+        fi
+      else
+        return 1
+      fi
+      ;;
+    "exec --interactive")
+      verifier_source="$(cat)"
+      grep -Fq 'hostname: "caddy"' <<<"$verifier_source"
+      grep -Fq 'rejectUnauthorized: true' <<<"$verifier_source"
+      if [[ " $* " != *" node --input-type=module "* ]]; then
+        echo "Expected the route verifier to run as an ES module." >&2
+        return 1
+      fi
+      if [[ "$FAKE_FAIL_INTERNAL_ROUTES" == "true" ]]; then
+        return 1
+      fi
+      ;;
     "service rollback")
       target="${!#}"
       if [[ "$target" == "starsnap-company_website" ]]; then
@@ -173,7 +235,7 @@ docker() {
       fi
       ;;
     "stack config")
-      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n    networks:\n      default: null\n      starsnap_main_app_net: null\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\nnetworks:\n  starsnap_main_app_net:\n    name: starsnap-main_app-net\n    external: true\n' \
+      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n    networks:\n      default: null\n      starsnap_main_app_net: null\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\nnetworks:\n  starsnap_main_app_net:\n    name: starsnap-main_app-net\n    external: true\n' \
         "$caddy_image" "$STARSNAP_WEBSITE_IMAGE" "$CADDY_CONFIG_NAME"
       ;;
     "stack ls")
@@ -262,75 +324,15 @@ docker() {
   esac
 }
 
-curl() {
-  local dump_header=""
-  local host=""
-  local output=""
-  local current_image=""
-  local request_url=""
-  local index=1
-  local args=("$@")
-
-  while (( index <= ${#args[@]} )); do
-    if [[ "${args[index - 1]}" == "--output" ]]; then
-      output="${args[index]}"
-    elif [[ "${args[index - 1]}" == "--dump-header" ]]; then
-      dump_header="${args[index]}"
-    elif [[ "${args[index - 1]}" == "--header" ]]; then
-      host="${args[index]#Host: }"
-    elif [[ "${args[index - 1]}" == "--resolve" ]]; then
-      host="${args[index]%%:*}"
-    elif [[ "${args[index - 1]}" == http://* || "${args[index - 1]}" == https://* ]]; then
-      request_url="${args[index - 1]}"
-    fi
-    index=$((index + 1))
-  done
-
-  if [[ "$FAKE_FAIL_CADDY_TLS" == "true" && "$request_url" == https://* ]]; then
-    return 60
-  fi
-
-  if [[ -n "$dump_header" ]]; then
-    if [[ "$FAKE_FAIL_CADDY_REDIRECT" == "true" ]]; then
-      printf 'HTTP/1.1 200 OK\r\n\r\n' >"$dump_header"
-    elif [[ "$host" == "starsnap.kr" ]]; then
-      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://starsnap.kr/\r\n\r\n' >"$dump_header"
-    elif [[ "$host" == "www.starsnap.kr" ]]; then
-      printf 'HTTP/1.1 301 Moved Permanently\r\nLocation: https://starsnap.kr/\r\n\r\n' >"$dump_header"
-    elif [[ "$host" == "api.starsnap.kr" ]]; then
-      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://api.starsnap.kr/\r\n\r\n' >"$dump_header"
-    else
-      return 22
-    fi
-    return 0
-  fi
-
-  current_image="$(cat "$FAKE_SWARM_STATE/current-image")"
-  if [[ "$FAKE_FAIL_CANDIDATE" == "true" && "$current_image" == "$candidate_image" ]]; then
-    return 22
-  fi
-
-  if [[ -n "$output" && "$output" != "/dev/null" ]]; then
-    if [[ "$request_url" == "https://api.starsnap.kr/api/health" ]]; then
-      printf '%s' '{"status":"ok"}' >"$output"
-    else
-      printf '%s' "StarSnap" >"$output"
-    fi
-  fi
-}
-
 sleep() {
   SECONDS=$((SECONDS + 60))
 }
 
-export -f docker curl sleep
+export -f docker sleep
 
 run_deploy() {
-  RUNNER_TEMP="$test_root" \
   STACK_NAME="starsnap-company" \
   SERVICE_NAME="starsnap-company_website" \
-  STARSNAP_HEALTH_URL="http://192.0.2.1:3000/" \
-  STARSNAP_PROXY_HEALTH_URL="http://192.0.2.1/" \
   STARSNAP_ROLLOUT_TIMEOUT_SECONDS=1 \
   STARSNAP_ROLLBACK_TIMEOUT_SECONDS=1 \
   STARSNAP_CLEANUP_TIMEOUT_SECONDS=1 \
@@ -349,6 +351,43 @@ test -e "$FAKE_SWARM_STATE/caddy-config"
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
   echo "Caddy must reach the API over the shared Swarm overlay." >&2
+  exit 1
+fi
+
+reset_state
+export FAKE_RUNNER_NODE_LABEL=false
+if unlabeled_node_output="$(run_deploy 2>&1)"; then
+  echo "Expected an unlabeled manager to stop deployment." >&2
+  exit 1
+fi
+grep -Fq "Current Swarm manager must have starsnap.actions-runner=true" <<<"$unlabeled_node_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
+
+reset_state
+export FAKE_RUNNER_NODE_IDS=$'fake-runner-node-id\nsecond-runner-node-id'
+if duplicate_labeled_node_output="$(run_deploy 2>&1)"; then
+  echo "Expected multiple labeled nodes to stop deployment." >&2
+  exit 1
+fi
+grep -Fq "Expected exactly one Swarm node with starsnap.actions-runner=true; found 2" \
+  <<<"$duplicate_labeled_node_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
+
+reset_state
+export FAKE_RUNNER_NODE_IDS=other-runner-node-id
+if mismatched_labeled_node_output="$(run_deploy 2>&1)"; then
+  echo "Expected a label on a different node to stop deployment." >&2
+  exit 1
+fi
+grep -Fq "The sole starsnap.actions-runner node must be the current manager" \
+  <<<"$mismatched_labeled_node_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
+
+if grep -Eq 'STARSNAP_(HEALTH|PROXY_HEALTH)_URL|(^|[[:space:]])curl([[:space:]]|$)' deploy/deploy-swarm.sh; then
+  echo "Swarm convergence must not depend on LAN HTTP requests." >&2
   exit 1
 fi
 
@@ -385,17 +424,28 @@ test ! -e "$FAKE_SWARM_STATE/caddy-image"
 test -z "$(find "$FAKE_SWARM_STATE/configs" -type f -name '*.data' -print -quit)"
 
 reset_state
-export FAKE_FAIL_CADDY_TLS=true
-if tls_failure_output="$(run_deploy 2>&1)"; then
-  echo "Expected an invalid Caddy TLS endpoint to fail the deployment." >&2
+export FAKE_FAIL_CADDY_HEALTH=true
+if caddy_health_failure_output="$(run_deploy 2>&1)"; then
+  echo "Expected an unhealthy Caddy task to fail the deployment." >&2
   exit 1
 fi
-grep -Fq "Timed out waiting for the Caddy deploy operation" <<<"$tls_failure_output"
+grep -Fq "Timed out waiting for the Caddy deploy operation" <<<"$caddy_health_failure_output"
+test ! -e "$FAKE_SWARM_STATE/caddy-image"
+
+reset_state
+export FAKE_FAIL_INTERNAL_ROUTES=true
+if route_failure_output="$(run_deploy 2>&1)"; then
+  echo "Expected failed internal routes to fail and roll back deployment." >&2
+  exit 1
+fi
+grep -Fq "Timed out waiting for the Caddy deploy operation" <<<"$route_failure_output"
+grep -Fq "Website rollback verified: $previous_image" <<<"$route_failure_output"
+test -e "$FAKE_SWARM_STATE/rollback-requested"
 test ! -e "$FAKE_SWARM_STATE/caddy-image"
 
 reset_state
 seed_previous_caddy
-export FAKE_FAIL_CADDY_TLS=true
+export FAKE_FAIL_CADDY_HEALTH=true
 if existing_caddy_failure_output="$(run_deploy 2>&1)"; then
   echo "Expected a failed update to restore the full previous Caddy spec." >&2
   exit 1
@@ -417,17 +467,6 @@ test -e "$FAKE_SWARM_STATE/stack-remove-requested"
 test ! -e "$FAKE_SWARM_STATE/current-image"
 test ! -e "$FAKE_SWARM_STATE/caddy-image"
 test ! -e "$FAKE_SWARM_STATE/stack-exists"
-
-reset_state
-export FAKE_FAIL_CADDY_REDIRECT=true
-if redirect_failure_output="$(run_deploy 2>&1)"; then
-  echo "Expected an invalid Caddy redirect to fail the deployment." >&2
-  exit 1
-fi
-grep -Fq "Timed out waiting for the Caddy deploy operation" <<<"$redirect_failure_output"
-grep -Fq "Website rollback verified: $previous_image" <<<"$redirect_failure_output"
-test ! -e "$FAKE_SWARM_STATE/caddy-image"
-test -z "$(find "$FAKE_SWARM_STATE/configs" -type f -name '*.data' -print -quit)"
 
 reset_state
 export FAKE_SERVICE_LIST_ERROR=true

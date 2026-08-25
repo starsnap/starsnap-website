@@ -35,6 +35,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.labels.starsnap.actions-runner == true
 
       update_config:
         parallelism: 1

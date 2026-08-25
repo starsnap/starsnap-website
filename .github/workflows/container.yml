@@ -19,16 +19,27 @@ on:
       - "tsconfig.json"
       - "vite.config.ts"
   workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Run only public DNS, TLS, redirect, site, and API verification
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: container-${{ github.ref }}
+  group: >-
+    ${{
+      (github.event_name == 'workflow_dispatch' && inputs.verify_only && format('external-verify-{0}', github.run_id)) ||
+      format('container-{0}', github.ref)
+    }}
   cancel-in-progress: false
 
 jobs:
   quality:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.verify_only) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -73,13 +84,19 @@ jobs:
           bash -n deploy/deploy-swarm.sh
           bash -n deploy/github-runner-entrypoint.sh
           bash -n deploy/test-deploy-swarm.sh
+          bash -n deploy/verify-external.sh
+          bash -n deploy/test-verify-external.sh
+          node --check deploy/verify-internal.mjs
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/repo:ro" \
             koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
             /repo/deploy/deploy-swarm.sh \
             /repo/deploy/github-runner-entrypoint.sh \
-            /repo/deploy/test-deploy-swarm.sh
+            /repo/deploy/test-deploy-swarm.sh \
+            /repo/deploy/verify-external.sh \
+            /repo/deploy/test-verify-external.sh
           bash deploy/test-deploy-swarm.sh
+          bash deploy/test-verify-external.sh
           docker stack config --compose-file deploy/docker-stack.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.bootstrap.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.yml >/dev/null
@@ -239,7 +256,6 @@ jobs:
       vars.SWARM_DEPLOY_ENABLED == 'true'
     runs-on:
       group: starsnap-production
-      labels: starsnap-swarm
     environment: production
     timeout-minutes: 15
 
@@ -254,8 +270,6 @@ jobs:
     env:
       STACK_NAME: starsnap-company
       SERVICE_NAME: starsnap-company_website
-      STARSNAP_HEALTH_URL: ${{ vars.STARSNAP_HEALTH_URL }}
-      STARSNAP_PROXY_HEALTH_URL: ${{ vars.STARSNAP_PROXY_HEALTH_URL }}
       STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@${{ needs.publish.outputs.digest }}
 
     steps:
@@ -270,8 +284,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
-          test -n "$STARSNAP_HEALTH_URL"
-          test -n "$STARSNAP_PROXY_HEALTH_URL"
 
       - name: Sign in to GHCR for deployment
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -283,3 +295,28 @@ jobs:
       - name: Deploy immutable image and verify rollout
         shell: bash
         run: bash deploy/deploy-swarm.sh
+
+  external-verify:
+    needs: deploy
+    if: >-
+      always() &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.verify_only) ||
+        needs.deploy.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out external verification script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: deploy
+
+      - name: Verify public DNS, TLS, redirects, site, and API
+        shell: bash
+        run: bash deploy/verify-external.sh

@@ -9,16 +9,11 @@ verified digest to `latest`, and then deploys the digest to Docker Swarm.
 The deploy job is disabled until all of the following exist:
 
 - An organization self-hosted runner on the ARM64 Swarm manager in the
-  `starsnap-production` runner group with the `starsnap-swarm` label.
+  `starsnap-production` runner group. The deploy job schedules by this group
+  alone; the `starsnap-swarm` custom runner label is operational inventory
+  metadata and is not part of `runs-on` matching.
 - The runner group must allow this public repository and must restrict workflow
   access to `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`.
-- A repository variable named `STARSNAP_HEALTH_URL` whose value is the published
-  site root, such as `http://192.168.1.103:3000/`.
-- A repository variable named `STARSNAP_PROXY_HEALTH_URL` whose value is the
-  Swarm manager's internal HTTP origin on port 80, such as
-  `http://192.168.1.103/`. The deploy script sends explicit `starsnap.kr` and
-  `www.starsnap.kr` and `api.starsnap.kr` Host headers to this origin, so it does
-  not depend on router hairpin NAT or public DNS during rollout verification.
 - A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
 - A GitHub environment named `production` that permits only `main` and follows
   the organization's chosen reviewer and administrator-bypass policy.
@@ -56,7 +51,12 @@ updates disabled.
 The deploy runner has Swarm-manager-level authority. Keep its runner group
 restricted to the exact workflow above, never add pull-request or fork triggers
 to the deploy job, and protect workflow changes on `main` before granting
-additional collaborators write access.
+additional collaborators write access. Keep the group limited to the intended
+ARM64 manager runner; group membership, not a combined custom-label match, is the
+GitHub Actions deployment routing boundary. The separate Docker node label
+`starsnap.actions-runner=true` is the Swarm placement boundary for both company
+services. The deployment preflight requires the current manager to carry that
+label and requires it to be the only labeled node in the Swarm.
 
 ## Deployment guarantees
 
@@ -65,19 +65,26 @@ additional collaborators write access.
 - The deploy script refuses an unexpected repository or malformed digest.
 - Swarm updates are serialized and use start-first updates with automatic
   rollback.
-- The workflow waits for `1/1` replicas, a completed update, a StarSnap response,
-  and a reachable `/icon.png` before reporting success.
+- The manager-side deploy script waits for the immutable image and Caddy config,
+  `1/1` replicas, a completed update, and exactly one local task container with a
+  `healthy` Docker healthcheck for each company service.
+- Once the expected Caddy image and config are healthy, the deploy script runs
+  the internal route verifier from the healthy website task over the stack
+  overlay. Route verification remains inside the rollback boundary.
+- Manager-side convergence never curls a LAN address, so it does not depend on
+  router hairpin NAT or a manager host-port path.
 - On verification failure, the workflow requests a rollback when a previous
   service specification exists.
 
 ## Caddy edge service
 
 The same `starsnap-company` stack runs the official Caddy `2.10.2-alpine`
-multi-platform image pinned by immutable manifest digest. Caddy is constrained
-to the manager carrying `starsnap.actions-runner=true`, which keeps its local
-certificate volumes on the same node, and publishes TCP ports 80 and 443. The
-website keeps its existing port 3000 publication for direct internal
-diagnostics.
+multi-platform image pinned by immutable manifest digest. Caddy and the website
+are both constrained to the sole manager carrying
+`starsnap.actions-runner=true`. This makes the local website container available
+to the deployment verifier and keeps Caddy's certificate volumes on the same
+node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
+3000 publication for direct internal diagnostics.
 
 `Caddyfile` provides these routes:
 
@@ -100,17 +107,45 @@ copy their contents into the repository.
 The deploy script validates the committed Caddyfile with the pinned Caddy image
 before changing the stack. It requires the external `starsnap-main_app-net`
 overlay and the `starsnap-main_api` service to exist, then creates a
-content-addressed Docker Swarm config, verifies both company services at `1/1`,
-and checks the apex HTTPS upgrade plus the one-hop `www` redirect over the
-internal port-80 origin. It also connects to the manager with `curl --resolve`
-while retaining the public host name for SNI and certificate validation, then
-verifies the apex content, icon, and HTTPS `www` redirect. It checks
-`https://api.starsnap.kr/api/health` for the live API `{"status":"ok"}` response,
-which proves Caddy can resolve and reach the API through the shared overlay. On
-a failed update, it compares the complete previous Caddy service specification
-before rolling back, restores or removes each service according to the
-pre-deployment state, and removes a newly created config when it is no longer
-referenced.
+content-addressed Docker Swarm config and verifies both company services through
+Swarm state plus their container healthchecks. After the expected Caddy image,
+config, update state, and healthcheck converge, it executes
+`verify-internal.mjs` inside the sole healthy website container. That verifier
+checks the website marker and icon directly, then reaches Caddy at service DNS
+`caddy:80/443` to check the apex HTTPS marker/icon, HTTP and HTTPS `www`
+one-hop redirects with path/query preservation, and the API HTTP redirect plus
+HTTPS health response. HTTPS requests set each public hostname as TLS SNI and
+retain normal CA and hostname verification; no insecure TLS mode is used.
+
+Because this internal route check is part of Caddy convergence, a failure uses
+the existing rollback path. The script compares the complete previous Caddy
+service specification before rolling back, restores or removes each service
+according to the pre-deployment state, and removes a newly created config when
+it is no longer referenced.
+
+After the Swarm deployment succeeds, the `external-verify` job runs on a
+GitHub-hosted Ubuntu runner outside the LAN. `verify-external.sh` retries while
+DNS and certificate issuance converge and intentionally uses public DNS plus
+curl's normal CA and hostname validation—there is no `--resolve` or insecure TLS
+mode. It verifies:
+
+- apex HTTP redirects to HTTPS;
+- apex HTTPS contains the StarSnap marker and serves a non-empty `/icon.png`;
+- HTTP and HTTPS `www` each redirect directly to the apex in one response while
+  preserving a test path and query string;
+- API HTTP redirects to HTTPS and public `/api/health` returns
+  `{"status":"ok"}`.
+
+An external verification failure fails the workflow and provides public-path
+evidence, but it does not mutate the already converged Swarm deployment.
+
+To rerun only the public checks without rebuilding, publishing, or deploying,
+manually dispatch `Build, verify, publish, and deploy container` with the boolean
+`verify_only` input set to `true`. The skipped deploy is treated deliberately:
+`external-verify` uses an `always()` condition and runs only for this explicit
+verify-only request or after a successful normal deployment. Verify-only runs
+use a run-specific concurrency group, so they do not wait behind a build or
+deployment queued for the same branch.
 
 Before the first deployment, public DNS must point the apex, `www`, and `api`
 names at the router's public IPv4 address, and the router must forward TCP 80 and

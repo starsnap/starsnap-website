@@ -12,6 +12,8 @@ readonly erp_http_url="http://erp.starsnap.kr"
 readonly erp_https_url="https://erp.starsnap.kr"
 readonly sns_http_url="http://sns.starsnap.kr"
 readonly sns_https_url="https://sns.starsnap.kr"
+readonly admin_http_url="http://admin.starsnap.kr"
+readonly admin_https_url="https://admin.starsnap.kr"
 readonly redirect_uri='/__starsnap_external_verify__/path?source=github&value=1'
 readonly attempts="${STARSNAP_EXTERNAL_VERIFY_ATTEMPTS:-36}"
 readonly delay_seconds="${STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS:-10}"
@@ -34,6 +36,8 @@ readonly api_file="$temp_dir/api-health.json"
 readonly erp_index_file="$temp_dir/erp-index.html"
 readonly sns_index_file="$temp_dir/sns-index.html"
 readonly sns_health_file="$temp_dir/sns-health.json"
+readonly admin_index_file="$temp_dir/admin-index.html"
+readonly admin_health_file="$temp_dir/admin-health.json"
 
 # Invoked indirectly by the EXIT trap.
 # shellcheck disable=SC2329
@@ -96,6 +100,39 @@ verify_status() {
   fi
 }
 
+verify_ok_json() {
+  local request_url="$1"
+  local output_file="$2"
+  local label="$3"
+  local status=""
+
+  if ! curl "${curl_common[@]}" \
+    --dump-header "$headers_file" \
+    --output "$output_file" \
+    "$request_url"; then
+    echo "$label request failed." >&2
+    return 1
+  fi
+
+  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$headers_file")"
+  if [[ "$status" != "200" ]]; then
+    echo "$label returned HTTP $status." >&2
+    return 1
+  fi
+  if ! node -e '
+    const fs = require("fs");
+    try {
+      const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      if (!payload || payload.status !== "ok") process.exit(1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$output_file"; then
+    echo "$label response was not ok." >&2
+    return 1
+  fi
+}
+
 verify_once() {
   verify_redirect \
     "${apex_http_url}${redirect_uri}" \
@@ -121,6 +158,10 @@ verify_once() {
     "${sns_http_url}/api/health" \
     "308" \
     "${sns_https_url}/api/health" || return 1
+  verify_redirect \
+    "${admin_http_url}/api/health" \
+    "308" \
+    "${admin_https_url}/api/health" || return 1
 
   # Curl's normal CA and hostname validation is intentionally retained here.
   # Do not add --insecure or --resolve; this job must exercise public DNS/TLS.
@@ -186,13 +227,27 @@ verify_once() {
     echo "Public SNS API health response was not ok." >&2
     return 1
   fi
+
+  if ! curl "${curl_common[@]}" --fail --output "$admin_index_file" "${admin_https_url}/"; then
+    echo "Public Admin root request failed." >&2
+    return 1
+  fi
+  if ! grep -Fq "StarSnap Admin" "$admin_index_file"; then
+    echo "Public Admin root response did not contain the StarSnap Admin marker." >&2
+    return 1
+  fi
+
+  verify_ok_json \
+    "${admin_https_url}/api/health" \
+    "$admin_health_file" \
+    "Public Admin API health" || return 1
 }
 
 attempt=1
 while (( attempt <= attempts )); do
   echo "External verification attempt $attempt/$attempts"
   if verify_once; then
-    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, and sns.starsnap.kr."
+    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, and admin.starsnap.kr."
     exit 0
   fi
 

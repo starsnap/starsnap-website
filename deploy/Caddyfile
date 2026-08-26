@@ -34,6 +34,23 @@ sns.starsnap.kr {
 	reverse_proxy 192.168.1.2:3000
 }
 
+admin.starsnap.kr {
+	encode zstd gzip
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	@admin_api path /api/*
+	handle @admin_api {
+		reverse_proxy 192.168.1.2:8082
+	}
+	handle {
+		reverse_proxy 192.168.1.2:5174
+	}
+}
+
 www.starsnap.kr {
 	redir https://starsnap.kr{uri} permanent
 }

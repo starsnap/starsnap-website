@@ -77,6 +77,9 @@ curl() {
     'http://sns.starsnap.kr/api/health')
       printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://sns.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
       ;;
+    'http://admin.starsnap.kr/api/health')
+      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://admin.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
+      ;;
     'http://www.starsnap.kr/__starsnap_external_verify__/path?source=github&value=1' \
       |'https://www.starsnap.kr/__starsnap_external_verify__/path?source=github&value=1')
       printf 'HTTP/1.1 301 Moved Permanently\r\nLocation: https://starsnap.kr/__starsnap_external_verify__/path?source=github&value=1\r\n\r\n' >"$dump_header"
@@ -113,6 +116,25 @@ curl() {
     'https://sns.starsnap.kr/api/health')
       printf '%s' '{"status": "ok"}' >"$output"
       ;;
+    'https://admin.starsnap.kr/')
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_admin_marker" ]]; then
+        printf '%s' '<html><title>Unexpected console</title></html>' >"$output"
+      else
+        printf '%s' '<html><title>StarSnap Admin</title></html>' >"$output"
+      fi
+      ;;
+    'https://admin.starsnap.kr/api/health')
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_admin_health_status" ]]; then
+        printf 'HTTP/2 503 Service Unavailable\r\n\r\n' >"$dump_header"
+      else
+        printf 'HTTP/2 200 OK\r\n\r\n' >"$dump_header"
+      fi
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_admin_health" ]]; then
+        printf '%s' '{"status": "degraded"}' >"$output"
+      else
+        printf '%s' '{"status": "ok"}' >"$output"
+      fi
+      ;;
     *)
       echo "Unexpected fake external URL: $request_url" >&2
       return 22
@@ -146,7 +168,10 @@ grep -Fxq 'https://erp.starsnap.kr/api/health/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'http://sns.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://sns.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://sns.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "14"
+grep -Fxq 'http://admin.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://admin.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://admin.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "17"
 test ! -s "$FAKE_EXTERNAL_SLEEP_LOG"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -161,7 +186,7 @@ if exposed_erp_health_output="$(
   exit 1
 fi
 grep -Fq "Public ERP detailed health endpoint was not hidden" <<<"$exposed_erp_health_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "22"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "24"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -176,7 +201,52 @@ if exposed_erp_health_slash_output="$(
   exit 1
 fi
 grep -Fq "Public ERP trailing-slash health endpoint was not hidden" <<<"$exposed_erp_health_slash_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "24"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "26"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_admin_marker
+if bad_admin_marker_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected a missing Admin marker to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Admin root response did not contain the StarSnap Admin marker" <<<"$bad_admin_marker_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "32"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_admin_health_status
+if bad_admin_health_status_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected a non-200 Admin health response to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Admin API health returned HTTP 503" <<<"$bad_admin_health_status_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "34"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_admin_health
+if bad_admin_health_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected a non-ok Admin health response to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Admin API health response was not ok" <<<"$bad_admin_health_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "34"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"

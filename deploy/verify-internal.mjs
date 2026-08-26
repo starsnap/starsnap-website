@@ -201,6 +201,29 @@ async function main() {
     throw new Error("SNS HTTPS health status was not ok");
   }
 
+  expectRedirect(
+    await caddyHttp("admin.starsnap.kr", "/api/health"),
+    308,
+    "https://admin.starsnap.kr/api/health",
+    "Admin HTTP redirect",
+  );
+  expectMarker(
+    await caddyHttps("admin.starsnap.kr", "/"),
+    "StarSnap Admin",
+    "Admin HTTPS root",
+  );
+  const adminHealth = await caddyHttps("admin.starsnap.kr", "/api/health");
+  expectStatus(adminHealth, 200, "Admin HTTPS health");
+  let adminPayload;
+  try {
+    adminPayload = JSON.parse(adminHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("Admin HTTPS health did not return JSON");
+  }
+  if (adminPayload.status !== "ok") {
+    throw new Error("Admin HTTPS health status was not ok");
+  }
+
   console.log("Internal route verification passed.");
 }
 

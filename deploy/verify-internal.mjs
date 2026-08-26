@@ -264,6 +264,45 @@ async function main() {
     throw new Error("Admin HTTPS health status was not ok");
   }
 
+  expectRedirect(
+    await caddyHttp("log.starsnap.kr", "/"),
+    308,
+    "https://log.starsnap.kr/",
+    "Log Hub HTTP redirect",
+  );
+  expectMarker(
+    await caddyHttps("log.starsnap.kr", "/"),
+    "StarSnap Hub",
+    "Log Hub HTTPS root",
+  );
+  const logServicesPath =
+    "/api/dashboard/services?startAt=2026-01-01T00%3A00%3A00Z&endAt=2100-01-01T00%3A00%3A00Z";
+  expectStatus(
+    await caddyHttps("log.starsnap.kr", logServicesPath),
+    401,
+    "Log Hub dashboard Access gate",
+  );
+  const logHealth = await request(http, {
+    hostname: "192.168.1.2",
+    port: 8081,
+    path: "/actuator/health",
+  });
+  expectStatus(logHealth, 200, "Log Hub LAN health");
+  let logHealthPayload;
+  try {
+    logHealthPayload = JSON.parse(logHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("Log Hub LAN health did not return JSON");
+  }
+  if (logHealthPayload.status !== "UP") {
+    throw new Error("Log Hub LAN health status was not UP");
+  }
+  expectStatus(
+    await caddyHttps("log.starsnap.kr", "/api/server-logs"),
+    404,
+    "Log Hub public server-log ingestion",
+  );
+
   console.log("Internal route verification passed.");
 }
 

@@ -391,6 +391,19 @@ grep -Fq 'expectHeader(chatRoot, "x-starsnap-app-surface", "chat"' deploy/verify
 grep -Fq 'caddyHttp("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq "log.starsnap.kr {" deploy/Caddyfile
+grep -Fq "@log_dashboard_api path /api/dashboard/*" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:8081" deploy/Caddyfile
+grep -Fq "@log_blocked_api path /api/*" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:5173" deploy/Caddyfile
+grep -Fq 'caddyHttp("log.starsnap.kr", "/")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("log.starsnap.kr", "/")' deploy/verify-internal.mjs
+grep -Fq 'await caddyHttps("log.starsnap.kr", logServicesPath)' deploy/verify-internal.mjs
+grep -Fq '"Log Hub dashboard Access gate"' deploy/verify-internal.mjs
+grep -Fq 'port: 8081' deploy/verify-internal.mjs
+grep -Fq 'expectStatus(logHealth, 200, "Log Hub LAN health")' deploy/verify-internal.mjs
+grep -Fq 'if (logHealthPayload.status !== "UP")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("log.starsnap.kr", "/api/server-logs")' deploy/verify-internal.mjs
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
   echo "Caddy must reach the API over the shared Swarm overlay." >&2
   exit 1

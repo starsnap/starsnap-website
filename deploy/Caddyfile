@@ -63,6 +63,29 @@ admin.starsnap.kr {
 	}
 }
 
+log.starsnap.kr {
+	encode zstd gzip
+	header {
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+
+	@log_dashboard_api path /api/dashboard/*
+	handle @log_dashboard_api {
+		reverse_proxy 192.168.1.2:8081
+	}
+
+	@log_blocked_api path /api/*
+	handle @log_blocked_api {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy 192.168.1.2:5173
+	}
+}
+
 www.starsnap.kr {
 	redir https://starsnap.kr{uri} permanent
 }

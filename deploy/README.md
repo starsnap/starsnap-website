@@ -116,6 +116,15 @@ node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   Swarm stack. Keep the host address reserved and never forward WAN port 3000;
   Caddy is the only public ingress. The web container continues to proxy its
   same-origin `/api/*` and `/ws-chat` requests to the StarSnap backend.
+- `https://chat.starsnap.kr/*` is reverse-proxied to the same
+  `starsnap-main-web` container at `192.168.1.2:3000`. The shared web build
+  selects its message-only shell from the public hostname, while `/api/*` and
+  `/ws-chat` continue to reach the same backend, chat rooms, and message store
+  used by the SNS surface. The backend `CORS_ORIGIN_PATTERNS` value must include
+  both `https://sns.starsnap.kr` and `https://chat.starsnap.kr`. Caddy adds a
+  Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
+  verification also requires the shared web build's `social chat` capability
+  marker so an older SNS-only image cannot pass the Chat release gate.
 - Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
   the equivalent `https://starsnap.kr` URI.
 
@@ -138,9 +147,9 @@ one-hop redirects with path/query preservation, and the API HTTP redirect plus
 HTTPS health response. It also verifies the ERP HTTP redirect and HTTPS page
 marker through Caddy, then checks the database-backed `/api/health` response
 directly over the LAN so detailed health data is never exposed publicly.
-It also verifies the SNS HTTP redirect, HTTPS page marker, and same-origin API
-health response through the running StarSnap web container. Finally, it verifies
-the Admin HTTP redirect, HTTPS `StarSnap Admin` page marker, and public
+It also verifies the SNS and Chat HTTP redirects, HTTPS page markers, and
+same-origin API health responses through the running StarSnap web container.
+Finally, it verifies the Admin HTTP redirect, HTTPS `StarSnap Admin` page marker, and public
 `/api/health` 200 response with `{"status":"ok"}` through Caddy.
 HTTPS requests set each public hostname as TLS SNI and
 retain normal CA and hostname verification; no insecure TLS mode is used.
@@ -167,6 +176,8 @@ mode. It verifies:
   marker, and its detailed public `/api/health` path remains hidden with 404.
 - SNS HTTP redirects to HTTPS, its public root contains the StarSnap title, and
   its same-origin `/api/health` returns `{"status":"ok"}`.
+- Chat HTTP redirects to HTTPS, its public root contains the StarSnap title, and
+  its same-origin `/api/health` returns `{"status":"ok"}`.
 - Admin HTTP redirects to HTTPS, its public root contains the `StarSnap Admin`
   marker, and `/api/health` returns HTTP 200 with `{"status":"ok"}`.
 
@@ -181,7 +192,7 @@ verify-only request or after a successful normal deployment. Verify-only runs
 use a run-specific concurrency group, so they do not wait behind a build or
 deployment queued for the same branch.
 
-Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, and `admin`
+Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, `chat`, and `admin`
 names at the router's public IPv4 address, and the router must forward TCP 80 and
 443 to the manager's ports 80 and 443. Keep port 80 reachable because ACME
 validation and the required HTTP-to-HTTPS redirects use it. Avoid publishing an

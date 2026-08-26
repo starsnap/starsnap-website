@@ -12,6 +12,8 @@ readonly erp_http_url="http://erp.starsnap.kr"
 readonly erp_https_url="https://erp.starsnap.kr"
 readonly sns_http_url="http://sns.starsnap.kr"
 readonly sns_https_url="https://sns.starsnap.kr"
+readonly chat_http_url="http://chat.starsnap.kr"
+readonly chat_https_url="https://chat.starsnap.kr"
 readonly admin_http_url="http://admin.starsnap.kr"
 readonly admin_https_url="https://admin.starsnap.kr"
 readonly redirect_uri='/__starsnap_external_verify__/path?source=github&value=1'
@@ -36,6 +38,8 @@ readonly api_file="$temp_dir/api-health.json"
 readonly erp_index_file="$temp_dir/erp-index.html"
 readonly sns_index_file="$temp_dir/sns-index.html"
 readonly sns_health_file="$temp_dir/sns-health.json"
+readonly chat_index_file="$temp_dir/chat-index.html"
+readonly chat_health_file="$temp_dir/chat-health.json"
 readonly admin_index_file="$temp_dir/admin-index.html"
 readonly admin_health_file="$temp_dir/admin-health.json"
 
@@ -159,6 +163,10 @@ verify_once() {
     "308" \
     "${sns_https_url}/api/health" || return 1
   verify_redirect \
+    "${chat_http_url}/api/health" \
+    "308" \
+    "${chat_https_url}/api/health" || return 1
+  verify_redirect \
     "${admin_http_url}/api/health" \
     "308" \
     "${admin_https_url}/api/health" || return 1
@@ -228,6 +236,30 @@ verify_once() {
     return 1
   fi
 
+  if ! curl "${curl_common[@]}" \
+    --fail \
+    --dump-header "$headers_file" \
+    --output "$chat_index_file" \
+    "${chat_https_url}/"; then
+    echo "Public Chat root request failed." >&2
+    return 1
+  fi
+  if ! grep -Fq 'name="starsnap-app-surfaces" content="social chat"' "$chat_index_file"; then
+    echo "Public Chat root response did not contain the Chat surface capability marker." >&2
+    return 1
+  fi
+  local chat_surface=""
+  chat_surface="$(awk 'tolower($1) == "x-starsnap-app-surface:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$headers_file")"
+  if [[ "$chat_surface" != "chat" ]]; then
+    echo "Public Chat root response did not identify the Chat surface." >&2
+    return 1
+  fi
+
+  verify_ok_json \
+    "${chat_https_url}/api/health" \
+    "$chat_health_file" \
+    "Public Chat API health" || return 1
+
   if ! curl "${curl_common[@]}" --fail --output "$admin_index_file" "${admin_https_url}/"; then
     echo "Public Admin root request failed." >&2
     return 1
@@ -247,7 +279,7 @@ attempt=1
 while (( attempt <= attempts )); do
   echo "External verification attempt $attempt/$attempts"
   if verify_once; then
-    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, and admin.starsnap.kr."
+    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, chat.starsnap.kr, and admin.starsnap.kr."
     exit 0
   fi
 

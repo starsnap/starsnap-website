@@ -51,6 +51,13 @@ function expectMarker(response, marker, label) {
   }
 }
 
+function expectHeader(response, name, value, label) {
+  const actual = response.headers[name.toLowerCase()];
+  if (actual !== value) {
+    throw new Error(`${label} returned ${name}=${actual ?? ""}`);
+  }
+}
+
 function expectNonEmpty(response, label) {
   expectSuccess(response, label);
   if (response.body.length === 0) {
@@ -199,6 +206,39 @@ async function main() {
   }
   if (snsPayload.status !== "ok") {
     throw new Error("SNS HTTPS health status was not ok");
+  }
+
+  expectRedirect(
+    await caddyHttp("chat.starsnap.kr", "/api/health"),
+    308,
+    "https://chat.starsnap.kr/api/health",
+    "Chat HTTP redirect",
+  );
+  const chatRoot = await caddyHttps("chat.starsnap.kr", "/");
+  expectMarker(
+    chatRoot,
+    'name="starsnap-app-surfaces" content="social chat"',
+    "Chat HTTPS root",
+  );
+  expectHeader(chatRoot, "x-starsnap-app-surface", "chat", "Chat HTTPS root");
+  expectHeader(chatRoot, "x-frame-options", "DENY", "Chat HTTPS root");
+  expectHeader(chatRoot, "x-content-type-options", "nosniff", "Chat HTTPS root");
+  expectHeader(
+    chatRoot,
+    "referrer-policy",
+    "strict-origin-when-cross-origin",
+    "Chat HTTPS root",
+  );
+  const chatHealth = await caddyHttps("chat.starsnap.kr", "/api/health");
+  expectSuccess(chatHealth, "Chat HTTPS health");
+  let chatPayload;
+  try {
+    chatPayload = JSON.parse(chatHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("Chat HTTPS health did not return JSON");
+  }
+  if (chatPayload.status !== "ok") {
+    throw new Error("Chat HTTPS health status was not ok");
   }
 
   expectRedirect(

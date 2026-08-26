@@ -26,6 +26,7 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'echo "test-deploy-swarm failed at line $LINENO" >&2' ERR
 
 reset_state() {
   mkdir -p "$FAKE_SWARM_STATE"
@@ -336,9 +337,9 @@ export -f docker sleep
 run_deploy() {
   STACK_NAME="starsnap-company" \
   SERVICE_NAME="starsnap-company_website" \
-  STARSNAP_ROLLOUT_TIMEOUT_SECONDS=1 \
-  STARSNAP_ROLLBACK_TIMEOUT_SECONDS=1 \
-  STARSNAP_CLEANUP_TIMEOUT_SECONDS=1 \
+  STARSNAP_ROLLOUT_TIMEOUT_SECONDS=30 \
+  STARSNAP_ROLLBACK_TIMEOUT_SECONDS=30 \
+  STARSNAP_CLEANUP_TIMEOUT_SECONDS=30 \
   STARSNAP_WEBSITE_IMAGE="$candidate_image" \
     bash deploy/deploy-swarm.sh
 }
@@ -368,10 +369,28 @@ test ! -e "$FAKE_SWARM_STATE/caddy-image"
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
 grep -Fq "reverse_proxy 192.168.1.2:3001" deploy/Caddyfile
 grep -Fq "reverse_proxy 192.168.1.2:3000" deploy/Caddyfile
+grep -Fq "chat.starsnap.kr {" deploy/Caddyfile
+chat_caddy_block="$(sed -n '/^chat\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
+grep -Fq "reverse_proxy 192.168.1.2:3000" <<<"$chat_caddy_block"
+grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$chat_caddy_block"
+grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$chat_caddy_block"
+grep -Fq 'X-Frame-Options "DENY"' <<<"$chat_caddy_block"
+grep -Fq 'X-StarSnap-App-Surface "chat"' <<<"$chat_caddy_block"
+grep -Fq "admin.starsnap.kr {" deploy/Caddyfile
+grep -Fq "@admin_api path /api/*" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:8082" deploy/Caddyfile
+grep -Fq "reverse_proxy 192.168.1.2:5174" deploy/Caddyfile
 grep -Fq 'hostname: "192.168.1.2"' deploy/verify-internal.mjs
 grep -Fq 'port: 3001' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("erp.starsnap.kr", "/api/health/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("sns.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttp("chat.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("chat.starsnap.kr", "/")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("chat.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'expectHeader(chatRoot, "x-starsnap-app-surface", "chat"' deploy/verify-internal.mjs
+grep -Fq 'caddyHttp("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("admin.starsnap.kr", "/")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
   echo "Caddy must reach the API over the shared Swarm overlay." >&2
   exit 1

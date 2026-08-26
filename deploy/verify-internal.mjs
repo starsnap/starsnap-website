@@ -272,7 +272,7 @@ async function main() {
   );
   expectMarker(
     await caddyHttps("log.starsnap.kr", "/"),
-    "StarSnap Hub",
+    "StarSnap Log Dashboard",
     "Log Hub HTTPS root",
   );
   const logServicesPath =

@@ -74,6 +74,27 @@ jobs:
       - name: Verify standalone output
         run: test -f dist/standalone/server.js
 
+      - name: Parse migration PowerShell scripts
+        shell: pwsh
+        run: |
+          $parseFailures = @()
+          Get-ChildItem 'deploy/platform/*.ps1' | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseFailures += $parseErrors
+            }
+          }
+          if ($parseFailures.Count -gt 0) {
+            $parseFailures | Format-List
+            exit 1
+          }
+
       - name: Validate deployment files
         shell: bash
         env:
@@ -83,10 +104,33 @@ jobs:
           set -euo pipefail
           bash -n deploy/deploy-swarm.sh
           bash -n deploy/github-runner-entrypoint.sh
+          bash -n deploy/platform/deploy-platform.sh
+          bash -n deploy/platform/cleanup-server-transfer.sh
+          bash -n deploy/platform/provision-secrets.sh
+          bash -n deploy/platform/test-provision-secrets.sh
+          bash -n deploy/platform/restore-platform-data.sh
+          bash -n deploy/platform/switch-main-api-log.sh
+          bash -n deploy/platform/test-switch-main-api-log.sh
+          bash -n deploy/platform/validate-platform.sh
           bash -n deploy/test-deploy-swarm.sh
           bash -n deploy/verify-external.sh
           bash -n deploy/test-verify-external.sh
           node --check deploy/verify-internal.mjs
+          node --check deploy/platform/verify-platform.mjs
+          python -c 'import ast, pathlib; ast.parse(pathlib.Path("deploy/platform/relay-server.py").read_text(encoding="utf-8"))'
+          bash deploy/platform/validate-platform.sh --ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/repo:ro" \
+            --workdir /repo \
+            koalaman/shellcheck:v0.10.0@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
+            deploy/platform/validate-platform.sh \
+            deploy/platform/cleanup-server-transfer.sh \
+            deploy/platform/provision-secrets.sh \
+            deploy/platform/test-provision-secrets.sh \
+            deploy/platform/deploy-platform.sh \
+            deploy/platform/restore-platform-data.sh \
+            deploy/platform/switch-main-api-log.sh \
+            deploy/platform/test-switch-main-api-log.sh
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/repo:ro" \
             koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
@@ -97,6 +141,8 @@ jobs:
             /repo/deploy/test-verify-external.sh
           bash deploy/test-deploy-swarm.sh
           bash deploy/test-verify-external.sh
+          bash deploy/platform/test-provision-secrets.sh
+          bash deploy/platform/test-switch-main-api-log.sh
           docker stack config --compose-file deploy/docker-stack.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.bootstrap.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.yml >/dev/null

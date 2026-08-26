@@ -1,0 +1,154 @@
+name: Stage and migrate StarSnap platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Migration phase to run on the 192.168.1.103 Swarm manager
+        required: true
+        type: choice
+        options:
+          - provision
+          - preflight
+          - stage
+          - restore
+          - activate
+          - cleanup-transfer
+          - switch-log
+          - verify
+          - stop-target
+      confirmation:
+        description: Required phrase for activate, cleanup-transfer, switch-log, or stop-target; leave empty for other phases
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: starsnap-platform-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      github.ref == 'refs/heads/main'
+    runs-on:
+      group: starsnap-production
+    environment: production
+    timeout-minutes: 45
+
+    env:
+      SNS_WEB_IMAGE: ${{ vars.PLATFORM_SNS_WEB_IMAGE }}
+      ADMIN_WEB_IMAGE: ${{ vars.PLATFORM_ADMIN_WEB_IMAGE }}
+      ADMIN_SERVER_IMAGE: ${{ vars.PLATFORM_ADMIN_SERVER_IMAGE }}
+      HUB_WEB_IMAGE: ${{ vars.PLATFORM_HUB_WEB_IMAGE }}
+      HUB_SERVER_IMAGE: ${{ vars.PLATFORM_HUB_SERVER_IMAGE }}
+      ERP_WEB_IMAGE: ${{ vars.PLATFORM_ERP_WEB_IMAGE }}
+      ERP_SMTP_MAILER_IMAGE: ${{ vars.PLATFORM_ERP_SMTP_MAILER_IMAGE }}
+      ERP_EMBEDDING_WORKER_IMAGE: ${{ vars.PLATFORM_ERP_EMBEDDING_WORKER_IMAGE }}
+      MAIN_DB_PASSWORD_SECRET_NAME: starsnap-platform-main-db-password-v1
+      ERP_DB_PASSWORD_SECRET_NAME: starsnap-platform-erp-db-password-v1
+      ADMIN_JWT_SECRET_NAME: starsnap-platform-admin-jwt-v1
+      AWS_ACCESS_KEY_ID_SECRET_NAME: starsnap-platform-aws-access-key-id-v1
+      AWS_SECRET_ACCESS_KEY_SECRET_NAME: starsnap-platform-aws-secret-access-key-v1
+      HUB_INGEST_SECRET_NAME: starsnap-platform-hub-ingest-v1
+      HUB_DB_PASSWORD_SECRET_NAME: starsnap-platform-hub-db-password-v1
+      CLOUDFLARE_ACCESS_TEAM_DOMAIN_SECRET_NAME: starsnap-platform-cf-team-domain-v1
+      CLOUDFLARE_ACCESS_AUDIENCE_SECRET_NAME: starsnap-platform-cf-audience-v1
+      ERP_AUTH_CODE_SECRET_NAME: starsnap-platform-erp-auth-code-v1
+      ERP_SMTP_MAILER_TOKEN_SECRET_NAME: starsnap-platform-erp-mailer-token-v1
+      ERP_SMTP_USERNAME_SECRET_NAME: starsnap-platform-erp-smtp-username-v1
+      ERP_SMTP_PASSWORD_SECRET_NAME: starsnap-platform-erp-smtp-password-v1
+      ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME: starsnap-platform-erp-embedding-token-v1
+      PLATFORM_TRANSFER_TOKEN_SECRET_NAME: starsnap-platform-transfer-token-20260827
+      PLATFORM_TRANSFER_PASSPHRASE_SECRET_NAME: starsnap-platform-transfer-passphrase-20260827
+      HUB_POSTGRES_VOLUME_NAME: starsnap-hub-postgres-data-v1
+      ERP_POSTGRES_VOLUME_NAME: starsnap-erp-postgres-data-v1
+      ERP_OLLAMA_VOLUME_NAME: starsnap-erp-ollama-models-v1
+      ERP_POSTGRES_INIT_CONFIG_NAME: starsnap-erp-postgres-init-v1
+      PLATFORM_DATA_SHA256: ${{ vars.PLATFORM_DATA_SHA256 }}
+
+    steps:
+      - name: Check out migration files
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: deploy
+
+      - name: Verify Swarm manager target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
+          test "$(docker info --format '{{.Name}}')" = "master.hamtory.com"
+
+      - name: Sign in to GHCR
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Provision versioned Swarm secrets
+        if: ${{ inputs.phase == 'provision' }}
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.PLATFORM_AWS_ACCESS_KEY_ID_VALUE }}
+          AWS_SECRET_ACCESS_KEY_VALUE: ${{ secrets.PLATFORM_AWS_SECRET_ACCESS_KEY_VALUE }}
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN_VALUE: ${{ secrets.PLATFORM_CLOUDFLARE_TEAM_DOMAIN_VALUE }}
+          CLOUDFLARE_ACCESS_AUDIENCE_VALUE: ${{ secrets.PLATFORM_CLOUDFLARE_AUDIENCE_VALUE }}
+          ERP_SMTP_USERNAME_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_USERNAME_VALUE }}
+          ERP_SMTP_PASSWORD_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_PASSWORD_VALUE }}
+          PLATFORM_TRANSFER_TOKEN_VALUE: ${{ secrets.PLATFORM_TRANSFER_TOKEN_VALUE }}
+          PLATFORM_TRANSFER_PASSPHRASE_VALUE: ${{ secrets.PLATFORM_TRANSFER_PASSPHRASE_VALUE }}
+        run: bash deploy/platform/provision-secrets.sh
+
+      - name: Run target platform phase
+        if: >-
+          inputs.phase == 'preflight' ||
+          inputs.phase == 'stage' ||
+          inputs.phase == 'activate' ||
+          inputs.phase == 'verify'
+        shell: bash
+        env:
+          ALLOW_PLATFORM_ACTIVATION: ${{ inputs.confirmation }}
+          ALLOW_PLATFORM_STOP: ${{ inputs.confirmation }}
+        run: bash deploy/platform/deploy-platform.sh "${{ inputs.phase }}"
+
+      - name: Switch SNS API logging to target Hub
+        if: ${{ inputs.phase == 'switch-log' }}
+        shell: bash
+        env:
+          ALLOW_API_LOG_ROUTE: ${{ inputs.confirmation }}
+        run: bash deploy/platform/switch-main-api-log.sh switch
+
+      - name: Restore SNS API logging before stopping target
+        if: ${{ inputs.phase == 'stop-target' }}
+        shell: bash
+        env:
+          ALLOW_API_LOG_ROUTE: ${{ inputs.confirmation }}
+        run: bash deploy/platform/switch-main-api-log.sh restore
+
+      - name: Stop target services and preserve data
+        if: ${{ inputs.phase == 'stop-target' }}
+        shell: bash
+        env:
+          ALLOW_PLATFORM_STOP: ${{ inputs.confirmation }}
+        run: bash deploy/platform/deploy-platform.sh stop-target
+
+      - name: Restore encrypted desktop snapshot
+        if: ${{ inputs.phase == 'restore' }}
+        shell: bash
+        run: bash deploy/platform/restore-platform-data.sh
+
+      - name: Remove server-side transfer copy and transfer secrets
+        if: ${{ inputs.phase == 'cleanup-transfer' }}
+        shell: bash
+        env:
+          ALLOW_TRANSFER_CLEANUP: ${{ inputs.confirmation }}
+        run: bash deploy/platform/cleanup-server-transfer.sh

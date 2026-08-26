@@ -1,0 +1,4 @@
+services:
+  ai-backend:
+    environment:
+      ACCESS_LOG_URL: http://host.docker.internal:8081/api/server-logs

@@ -132,15 +132,21 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
         "x-forwarded-proto": "https",
         cookie: `__Host-starsnap_session=${smoke.token}`,
       };
-      async function lookup() {
-        const response = await fetch(url, { headers });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${body.message ?? "unknown error"}`);
+      async function lookup({ retryTransient = false } = {}) {
+        const maximumAttempts = retryTransient ? 3 : 1;
+        for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+          const response = await fetch(url, { headers });
+          const body = await response.json().catch(() => ({}));
+          if (response.ok) return body;
+          const transient = [502, 503, 504].includes(response.status);
+          if (!transient || attempt === maximumAttempts) {
+            throw new Error(`HTTP ${response.status}: ${body.message ?? "unknown error"}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
         }
-        return body;
+        throw new Error("eAT lookup retry loop exited unexpectedly");
       }
-      const first = await lookup();
+      const first = await lookup({ retryTransient: true });
       const second = await lookup();
       if (first.source !== "EAT") throw new Error(`Expected EAT source, got ${first.source}`);
       if (second.source !== "CACHE") throw new Error(`Expected CACHE source, got ${second.source}`);

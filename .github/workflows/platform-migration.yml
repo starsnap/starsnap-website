@@ -359,6 +359,8 @@ jobs:
             --local \
             --ip 127.0.0.1 \
             --port 8787 \
+            --compatibility-date 2026-05-22 \
+            --compatibility-flag nodejs_compat \
             --log-level error \
             --show-interactive-dev-session=false \
             >"$log_file" 2>&1 &

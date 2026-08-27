@@ -1,4 +1,5 @@
 export type EatBidLookupSource = 'CACHE' | 'EAT' | 'STALE_CACHE';
+export type EatBidCacheScope = 'REGIONAL_SCAN_V1';
 
 export interface EatBidQuery {
   announcementStartDate: string;
@@ -6,6 +7,9 @@ export interface EatBidQuery {
   useOrganizationName: string;
   demandOrganizationName: string;
   bidName: string;
+  deliveryProvinceCode: string;
+  deliveryAreaCode: string;
+  cacheScope?: EatBidCacheScope;
   page: number;
   pageSize: number;
 }

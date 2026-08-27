@@ -5,7 +5,7 @@ import { authorizeTenant, isAllowedOrigin } from '@/app/lib/request-access';
 import { normalizeTenantCode } from '@/app/lib/tenant-code';
 import { ensureDatabase } from '@/db/bootstrap';
 import { EatApiError } from '@/db/eat-api-client';
-import { lookupEatBids } from '@/db/eat-bid-service';
+import { EatBidRegionLookupError, lookupEatBids } from '@/db/eat-bid-service';
 import { queryOne } from '@/db/postgres';
 
 function responseHeaders(request: Request) {
@@ -72,6 +72,9 @@ async function handleGet(request: Request) {
     const result = await lookupEatBids(parsedQuery.query);
     return NextResponse.json(result, { headers: responseHeaders(request) });
   } catch (error) {
+    if (error instanceof EatBidRegionLookupError) {
+      return failure(request, error.status, error.message);
+    }
     if (error instanceof EatApiError) {
       console.error('eAT bid lookup upstream failure', {
         code: error.code,

@@ -4,6 +4,7 @@ import type {
   EatBidItemSpec,
   EatBidQuery,
 } from '@/app/lib/eat-bid-types';
+import { normalizeEatDeliveryRegionCodes } from '@/app/lib/eat-delivery-region';
 import { ensureDatabase } from './bootstrap';
 import { queryAll, queryOne, withTransaction } from './postgres';
 
@@ -21,9 +22,20 @@ export interface EatBidCacheValueInput {
   items: readonly EatBidAnnouncementCacheInput[];
 }
 
+export interface EatBidCacheWriteOptions {
+  fetchedAt?: string;
+  generationId: string;
+}
+
+export interface EatBidCacheBatchEntry {
+  query: EatBidQuery;
+  value: EatBidCacheValueInput;
+}
+
 export interface EatBidCacheHit {
   queryHash: string;
   fresh: boolean;
+  generationId: string | null;
   fetchedAt: string;
   expiresAt: string;
   total: number;
@@ -34,6 +46,7 @@ export interface EatBidCacheHit {
 
 interface EatBidCacheMetadataRow {
   fresh: boolean;
+  generationId: string | null;
   fetchedAt: string;
   expiresAt: string;
   total: number;
@@ -85,6 +98,7 @@ interface PreparedItemSpec {
 }
 
 const QUERY_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const CACHE_GENERATION_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_COMPACT_PATTERN = /^(\d{4})(\d{2})(\d{2})$/;
 const DATE_DASHED_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SENSITIVE_RAW_KEY_PATTERN = /(servicekey|authorization|apikey)/;
@@ -132,12 +146,21 @@ function normalizeDate(value: string, label: string) {
 }
 
 export function normalizeEatBidQuery(query: EatBidQuery): EatBidQuery {
+  if (query.cacheScope && query.cacheScope !== 'REGIONAL_SCAN_V1') {
+    throw new Error('eAT 내부 캐시 범위가 올바르지 않습니다.');
+  }
+  const deliveryRegion = normalizeEatDeliveryRegionCodes(
+    query.deliveryProvinceCode,
+    query.deliveryAreaCode,
+  );
   const normalized: EatBidQuery = {
     announcementStartDate: normalizeDate(query.announcementStartDate, '공고 시작일'),
     announcementEndDate: normalizeDate(query.announcementEndDate, '공고 종료일'),
     useOrganizationName: requiredText(query.useOrganizationName, '이용기관명'),
     demandOrganizationName: normalizeText(query.demandOrganizationName),
     bidName: normalizeText(query.bidName),
+    ...deliveryRegion,
+    ...(query.cacheScope ? { cacheScope: query.cacheScope } : {}),
     page: positiveInteger(query.page, '페이지'),
     pageSize: positiveInteger(query.pageSize, '페이지 크기'),
   };
@@ -157,12 +180,16 @@ async function sha256(value: string) {
 
 export async function eatBidQueryHash(query: EatBidQuery) {
   const normalized = normalizeEatBidQuery(query);
+  if (normalized.deliveryProvinceCode) {
+    throw new Error('납품 지역 필터는 eAT 원본 페이지 캐시 키로 사용할 수 없습니다.');
+  }
   const canonical = JSON.stringify({
     announcementStartDate: normalized.announcementStartDate,
     announcementEndDate: normalized.announcementEndDate,
     useOrganizationName: normalized.useOrganizationName,
     demandOrganizationName: normalized.demandOrganizationName,
     bidName: normalized.bidName,
+    ...(normalized.cacheScope ? { cacheScope: normalized.cacheScope } : {}),
     page: normalized.page,
     pageSize: normalized.pageSize,
   });
@@ -403,6 +430,7 @@ export async function findEatBidCache(query: EatBidQuery): Promise<EatBidCacheHi
   return withTransaction(async (client) => {
     const metadata = await queryOne<EatBidCacheMetadataRow>(
       `SELECT expires_at > clock_timestamp() AS fresh,
+         normalized_filters->>'cacheGeneration' AS "generationId",
          fetched_at::text AS "fetchedAt", expires_at::text AS "expiresAt",
          total_count AS total, page, page_size AS "pageSize"
        FROM eat_bid_query_cache
@@ -416,126 +444,234 @@ export async function findEatBidCache(query: EatBidQuery): Promise<EatBidCacheHi
   }, 'REPEATABLE READ');
 }
 
-export async function replaceEatBidCache(
-  query: EatBidQuery,
-  value: EatBidCacheValueInput,
-  ttlMinutes: number,
-): Promise<EatBidCacheHit> {
+interface PreparedCachePage {
+  normalized: EatBidQuery;
+  queryHash: string;
+  prepared: Awaited<ReturnType<typeof prepareCacheValue>>;
+}
+
+interface NormalizedCacheWriteOptions {
+  requestedFetchedAt: string | null;
+  generationId: string | null;
+}
+
+function validateCacheTtlMinutes(ttlMinutes: number) {
   if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0) {
     throw new Error('eAT 캐시 TTL은 0보다 큰 분 단위 값이어야 합니다.');
   }
+}
+
+function normalizeCacheWriteOptions(
+  writeOptions?: EatBidCacheWriteOptions,
+): NormalizedCacheWriteOptions {
+  if (!writeOptions) {
+    return { requestedFetchedAt: null, generationId: null };
+  }
+  const parsedFetchedAt = writeOptions.fetchedAt
+    ? new Date(writeOptions.fetchedAt)
+    : null;
+  if (
+    (parsedFetchedAt && Number.isNaN(parsedFetchedAt.valueOf()))
+    || !CACHE_GENERATION_PATTERN.test(writeOptions.generationId)
+  ) {
+    throw new Error('eAT 지역 캐시 세대 정보가 올바르지 않습니다.');
+  }
+  return {
+    requestedFetchedAt: parsedFetchedAt?.toISOString() ?? null,
+    generationId: writeOptions.generationId,
+  };
+}
+
+async function prepareCachePage(
+  query: EatBidQuery,
+  value: EatBidCacheValueInput,
+): Promise<PreparedCachePage> {
   const normalized = normalizeEatBidQuery(query);
   const queryHash = await eatBidQueryHash(normalized);
   const prepared = await prepareCacheValue(value);
+  return { normalized, queryHash, prepared };
+}
+
+async function cacheTiming(
+  client: PoolClient,
+  ttlMinutes: number,
+  requestedFetchedAt: string | null,
+) {
+  const timing = await queryOne<CacheTimingRow>(
+    `SELECT moment::text AS "fetchedAt",
+       (moment + ($1::double precision * interval '1 minute'))::text AS "expiresAt"
+     FROM (SELECT COALESCE($2::timestamptz, clock_timestamp()) AS moment) timing`,
+    [ttlMinutes, requestedFetchedAt],
+    client,
+  );
+  if (!timing) throw new Error('eAT 캐시 저장 시간을 생성하지 못했습니다.');
+  return timing;
+}
+
+async function writePreparedCachePage(
+  client: PoolClient,
+  page: PreparedCachePage,
+  timing: CacheTimingRow,
+  generationId: string | null,
+): Promise<EatBidCacheHit> {
+  const { normalized, queryHash, prepared } = page;
   const normalizedFilters = {
     useOrganizationName: normalized.useOrganizationName,
     demandOrganizationName: normalized.demandOrganizationName,
     bidName: normalized.bidName,
+    cacheScope: normalized.cacheScope ?? null,
+    cacheGeneration: generationId,
   };
+
+  await client.query(
+    `INSERT INTO eat_bid_query_cache (
+       query_hash, normalized_filters, start_date, end_date, page, page_size,
+       total_count, fetched_at, expires_at, last_accessed_at
+     ) VALUES ($1, $2::jsonb, $3::date, $4::date, $5, $6, $7,
+       $8::timestamptz, $9::timestamptz, $8::timestamptz)
+     ON CONFLICT (query_hash) DO UPDATE SET
+       normalized_filters = EXCLUDED.normalized_filters,
+       start_date = EXCLUDED.start_date,
+       end_date = EXCLUDED.end_date,
+       page = EXCLUDED.page,
+       page_size = EXCLUDED.page_size,
+       total_count = EXCLUDED.total_count,
+       fetched_at = EXCLUDED.fetched_at,
+       expires_at = EXCLUDED.expires_at,
+       last_accessed_at = EXCLUDED.last_accessed_at`,
+    [queryHash, JSON.stringify(normalizedFilters), normalized.announcementStartDate,
+      normalized.announcementEndDate, normalized.page, normalized.pageSize,
+      prepared.total, timing.fetchedAt, timing.expiresAt],
+  );
+
+  await client.query(
+    'DELETE FROM eat_bid_announcements WHERE query_hash = $1',
+    [queryHash],
+  );
+
+  const bidNumbers = prepared.announcements.map((announcement) => announcement.bid_no);
+  if (bidNumbers.length > 0) {
+    await client.query(
+      `INSERT INTO eat_bid_announcements (
+         query_hash, bid_no, bid_name, status_name, announcement_date,
+         announcement_time, purchasing_organization_name,
+         demand_organization_name, bid_start_date, bid_end_date, bid_open_date,
+         bid_open_time, delivery_start_date, delivery_end_date, delivery_address,
+         base_price_text, item_name, raw_payload, fetched_at, updated_at
+       )
+       SELECT $2, incoming.bid_no, incoming.bid_name, incoming.status_name,
+         incoming.announcement_date, incoming.announcement_time,
+         incoming.purchasing_organization_name, incoming.demand_organization_name,
+         incoming.bid_start_date, incoming.bid_end_date, incoming.bid_open_date,
+         incoming.bid_open_time, incoming.delivery_start_date, incoming.delivery_end_date,
+         incoming.delivery_address, incoming.base_price_text, incoming.item_name,
+         incoming.raw_payload, $3::timestamptz, $3::timestamptz
+       FROM jsonb_to_recordset($1::jsonb) AS incoming(
+         bid_no text, bid_name text, status_name text, announcement_date text,
+         announcement_time text, purchasing_organization_name text,
+         demand_organization_name text, bid_start_date text, bid_end_date text,
+         bid_open_date text, bid_open_time text, delivery_start_date text,
+         delivery_end_date text, delivery_address text, base_price_text text,
+         item_name text, raw_payload jsonb
+       )`,
+      [JSON.stringify(prepared.announcements), queryHash, timing.fetchedAt],
+    );
+    if (prepared.itemSpecs.length > 0) {
+      await client.query(
+        `INSERT INTO eat_bid_item_specs (
+           query_hash, spec_id, bid_no, message_order, item_order, inst_name,
+           item_name, food_name, specification, unit_name, attributes,
+           quantity_text, raw_payload
+         )
+         SELECT $2, incoming.spec_id, incoming.bid_no, incoming.message_order,
+           incoming.item_order, incoming.inst_name, incoming.item_name,
+           incoming.food_name, incoming.specification, incoming.unit_name,
+           incoming.attributes, incoming.quantity_text, incoming.raw_payload
+         FROM jsonb_to_recordset($1::jsonb) AS incoming(
+           spec_id text, bid_no text, message_order integer, item_order integer,
+           inst_name text, item_name text, food_name text, specification text,
+           unit_name text, attributes text, quantity_text text, raw_payload jsonb
+         )`,
+        [JSON.stringify(prepared.itemSpecs), queryHash],
+      );
+    }
+    await client.query(
+      `INSERT INTO eat_bid_query_results (query_hash, bid_no, position)
+       SELECT $1, bid_no, (ordinality - 1)::integer
+       FROM unnest($2::text[]) WITH ORDINALITY AS result(bid_no, ordinality)`,
+      [queryHash, bidNumbers],
+    );
+  }
+  return {
+    queryHash,
+    fresh: true,
+    generationId,
+    fetchedAt: timing.fetchedAt,
+    expiresAt: timing.expiresAt,
+    total: prepared.total,
+    page: normalized.page,
+    pageSize: normalized.pageSize,
+    items: prepared.publicItems,
+  };
+}
+
+export async function replaceEatBidCache(
+  query: EatBidQuery,
+  value: EatBidCacheValueInput,
+  ttlMinutes: number,
+  writeOptions?: EatBidCacheWriteOptions,
+): Promise<EatBidCacheHit> {
+  validateCacheTtlMinutes(ttlMinutes);
+  const page = await prepareCachePage(query, value);
+  const options = normalizeCacheWriteOptions(writeOptions);
   await ensureDatabase();
   return withTransaction(async (client) => {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtext($1))',
-      [`eat-bid-query:${queryHash}`],
+      [`eat-bid-query:${page.queryHash}`],
     );
-    const timing = await queryOne<CacheTimingRow>(
-      `SELECT moment::text AS "fetchedAt",
-         (moment + ($1::double precision * interval '1 minute'))::text AS "expiresAt"
-       FROM (SELECT clock_timestamp() AS moment) timing`,
-      [ttlMinutes],
-      client,
-    );
-    if (!timing) throw new Error('eAT 캐시 저장 시간을 생성하지 못했습니다.');
+    const timing = await cacheTiming(client, ttlMinutes, options.requestedFetchedAt);
+    return writePreparedCachePage(client, page, timing, options.generationId);
+  });
+}
 
-    await client.query(
-      `INSERT INTO eat_bid_query_cache (
-         query_hash, normalized_filters, start_date, end_date, page, page_size,
-         total_count, fetched_at, expires_at, last_accessed_at
-       ) VALUES ($1, $2::jsonb, $3::date, $4::date, $5, $6, $7,
-         $8::timestamptz, $9::timestamptz, $8::timestamptz)
-       ON CONFLICT (query_hash) DO UPDATE SET
-         normalized_filters = EXCLUDED.normalized_filters,
-         start_date = EXCLUDED.start_date,
-         end_date = EXCLUDED.end_date,
-         page = EXCLUDED.page,
-         page_size = EXCLUDED.page_size,
-         total_count = EXCLUDED.total_count,
-         fetched_at = EXCLUDED.fetched_at,
-         expires_at = EXCLUDED.expires_at,
-         last_accessed_at = EXCLUDED.last_accessed_at`,
-      [queryHash, JSON.stringify(normalizedFilters), normalized.announcementStartDate,
-        normalized.announcementEndDate, normalized.page, normalized.pageSize,
-        prepared.total, timing.fetchedAt, timing.expiresAt],
-    );
+export async function replaceEatBidCacheBatch(
+  entries: readonly EatBidCacheBatchEntry[],
+  ttlMinutes: number,
+  writeOptions: EatBidCacheWriteOptions,
+): Promise<EatBidCacheHit[]> {
+  validateCacheTtlMinutes(ttlMinutes);
+  if (entries.length === 0) {
+    throw new Error('eAT 캐시 배치에는 하나 이상의 페이지가 필요합니다.');
+  }
+  const options = normalizeCacheWriteOptions(writeOptions);
+  const pages = await Promise.all(entries.map(({ query, value }) => (
+    prepareCachePage(query, value)
+  )));
+  const queryHashes = pages.map((page) => page.queryHash).sort();
+  if (new Set(queryHashes).size !== queryHashes.length) {
+    throw new Error('eAT 캐시 배치에 같은 조회 페이지가 중복되어 있습니다.');
+  }
 
-    await client.query(
-      'DELETE FROM eat_bid_announcements WHERE query_hash = $1',
-      [queryHash],
-    );
-
-    const bidNumbers = prepared.announcements.map((announcement) => announcement.bid_no);
-    if (bidNumbers.length > 0) {
+  await ensureDatabase();
+  return withTransaction(async (client) => {
+    for (const queryHash of queryHashes) {
       await client.query(
-        `INSERT INTO eat_bid_announcements (
-           query_hash, bid_no, bid_name, status_name, announcement_date,
-           announcement_time, purchasing_organization_name,
-           demand_organization_name, bid_start_date, bid_end_date, bid_open_date,
-           bid_open_time, delivery_start_date, delivery_end_date, delivery_address,
-           base_price_text, item_name, raw_payload, fetched_at, updated_at
-         )
-         SELECT $2, incoming.bid_no, incoming.bid_name, incoming.status_name,
-           incoming.announcement_date, incoming.announcement_time,
-           incoming.purchasing_organization_name, incoming.demand_organization_name,
-           incoming.bid_start_date, incoming.bid_end_date, incoming.bid_open_date,
-           incoming.bid_open_time, incoming.delivery_start_date, incoming.delivery_end_date,
-           incoming.delivery_address, incoming.base_price_text, incoming.item_name,
-           incoming.raw_payload, $3::timestamptz, $3::timestamptz
-         FROM jsonb_to_recordset($1::jsonb) AS incoming(
-           bid_no text, bid_name text, status_name text, announcement_date text,
-           announcement_time text, purchasing_organization_name text,
-           demand_organization_name text, bid_start_date text, bid_end_date text,
-           bid_open_date text, bid_open_time text, delivery_start_date text,
-           delivery_end_date text, delivery_address text, base_price_text text,
-           item_name text, raw_payload jsonb
-         )`,
-        [JSON.stringify(prepared.announcements), queryHash, timing.fetchedAt],
-      );
-      if (prepared.itemSpecs.length > 0) {
-        await client.query(
-          `INSERT INTO eat_bid_item_specs (
-             query_hash, spec_id, bid_no, message_order, item_order, inst_name,
-             item_name, food_name, specification, unit_name, attributes,
-             quantity_text, raw_payload
-           )
-           SELECT $2, incoming.spec_id, incoming.bid_no, incoming.message_order,
-             incoming.item_order, incoming.inst_name, incoming.item_name,
-             incoming.food_name, incoming.specification, incoming.unit_name,
-             incoming.attributes, incoming.quantity_text, incoming.raw_payload
-           FROM jsonb_to_recordset($1::jsonb) AS incoming(
-             spec_id text, bid_no text, message_order integer, item_order integer,
-             inst_name text, item_name text, food_name text, specification text,
-             unit_name text, attributes text, quantity_text text, raw_payload jsonb
-           )`,
-          [JSON.stringify(prepared.itemSpecs), queryHash],
-        );
-      }
-      await client.query(
-        `INSERT INTO eat_bid_query_results (query_hash, bid_no, position)
-         SELECT $1, bid_no, (ordinality - 1)::integer
-         FROM unnest($2::text[]) WITH ORDINALITY AS result(bid_no, ordinality)`,
-        [queryHash, bidNumbers],
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`eat-bid-query:${queryHash}`],
       );
     }
-    return {
-      queryHash,
-      fresh: true,
-      fetchedAt: timing.fetchedAt,
-      expiresAt: timing.expiresAt,
-      total: prepared.total,
-      page: normalized.page,
-      pageSize: normalized.pageSize,
-      items: prepared.publicItems,
-    };
+    const timing = await cacheTiming(client, ttlMinutes, options.requestedFetchedAt);
+    const stored: EatBidCacheHit[] = [];
+    for (const page of pages) {
+      stored.push(await writePreparedCachePage(
+        client,
+        page,
+        timing,
+        options.generationId,
+      ));
+    }
+    return stored;
   });
 }
 

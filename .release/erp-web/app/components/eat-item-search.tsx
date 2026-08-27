@@ -8,6 +8,14 @@ import {
   type FormEvent,
 } from 'react';
 import { ChevronLeft, ChevronRight, Database, Search } from 'lucide-react';
+import {
+  bidAreasForProvince,
+  bidProvinceOptions,
+  isBidAreaCode,
+  isBidProvinceCode,
+  type BidAreaCode,
+  type BidProvinceCode,
+} from '../lib/bid-regions';
 import type {
   EatBidAnnouncement,
   EatBidItemSpec,
@@ -20,6 +28,7 @@ import {
   type EatBidQueryFieldErrors,
 } from '../lib/eat-bid-validation';
 import { formatEatDate } from '../lib/eat-date-format';
+import { validateEatDeliveryRegionCodes } from '../lib/eat-delivery-region';
 import type { TenantCode } from '../lib/erp-types';
 
 const pageSize = 20;
@@ -100,12 +109,23 @@ function parseAnnouncement(value: unknown): EatBidAnnouncement {
 
 function parseQuery(value: unknown): EatBidQuery {
   if (!isRecord(value)) throw new Error('eAT 현품 조회 응답 형식이 올바르지 않습니다.');
+  const deliveryProvinceCode = requiredString(value, 'deliveryProvinceCode');
+  const deliveryAreaCode = requiredString(value, 'deliveryAreaCode');
+  const deliveryRegionErrors = validateEatDeliveryRegionCodes(
+    deliveryProvinceCode,
+    deliveryAreaCode,
+  );
+  if (deliveryRegionErrors.deliveryProvinceCode || deliveryRegionErrors.deliveryAreaCode) {
+    throw new Error('eAT 현품 조회 응답 지역 형식이 올바르지 않습니다.');
+  }
   return {
     announcementStartDate: requiredString(value, 'announcementStartDate'),
     announcementEndDate: requiredString(value, 'announcementEndDate'),
     useOrganizationName: requiredString(value, 'useOrganizationName'),
     demandOrganizationName: requiredString(value, 'demandOrganizationName'),
     bidName: requiredString(value, 'bidName'),
+    deliveryProvinceCode,
+    deliveryAreaCode,
     page: requiredInteger(value, 'page', 1),
     pageSize: requiredInteger(value, 'pageSize', 1),
   };
@@ -151,6 +171,8 @@ function sameSearchCriteria(left: EatBidQuery, right: EatBidQuery) {
     && left.useOrganizationName === right.useOrganizationName
     && left.demandOrganizationName === right.demandOrganizationName
     && left.bidName === right.bidName
+    && left.deliveryProvinceCode === right.deliveryProvinceCode
+    && left.deliveryAreaCode === right.deliveryAreaCode
     && left.pageSize === right.pageSize;
 }
 
@@ -230,11 +252,19 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
   const [useOrganizationName, setUseOrganizationName] = useState('');
   const [demandOrganizationName, setDemandOrganizationName] = useState('');
   const [bidName, setBidName] = useState('');
+  const [deliveryProvinceCode, setDeliveryProvinceCode] = useState<BidProvinceCode | ''>('');
+  const [deliveryAreaCode, setDeliveryAreaCode] = useState<BidAreaCode | ''>('');
   const [fieldErrors, setFieldErrors] = useState<EatBidQueryFieldErrors>({});
   const [activeQuery, setActiveQuery] = useState<EatBidQuery | null>(null);
   const [result, setResult] = useState<EatBidLookupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const deliveryProvince = deliveryProvinceCode
+    ? bidProvinceOptions.find((option) => option.code === deliveryProvinceCode)
+    : null;
+  const deliveryAreaOptions = deliveryProvinceCode
+    ? bidAreasForProvince(deliveryProvinceCode)
+    : [];
 
   useEffect(() => () => activeController.current?.abort(), []);
 
@@ -260,6 +290,8 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
     });
     if (query.demandOrganizationName) parameters.set('demandOrganizationName', query.demandOrganizationName);
     if (query.bidName) parameters.set('bidName', query.bidName);
+    if (query.deliveryProvinceCode) parameters.set('deliveryProvinceCode', query.deliveryProvinceCode);
+    if (query.deliveryAreaCode) parameters.set('deliveryAreaCode', query.deliveryAreaCode);
 
     try {
       const response = await fetch(`/api/erp/eat/bids?${parameters.toString()}`, {
@@ -294,6 +326,8 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
       useOrganizationName: useOrganizationName.normalize('NFKC').trim().replace(/\s+/g, ' '),
       demandOrganizationName: demandOrganizationName.normalize('NFKC').trim().replace(/\s+/g, ' '),
       bidName: bidName.normalize('NFKC').trim().replace(/\s+/g, ' '),
+      deliveryProvinceCode,
+      deliveryAreaCode,
       page: 1,
       pageSize,
     };
@@ -316,7 +350,7 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
         <div className="min-w-0">
           <p className="eyebrow">eAT PUBLIC PROCUREMENT</p>
           <h2 id={`${generatedId}-title`} className="mt-1 text-lg font-extrabold">eAT 입찰 현품 조회</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ss-text-muted)]">공고 기간과 기관을 지정해 현품설명서를 조회합니다. 같은 조건은 DB 저장 데이터를 먼저 사용하고, 저장된 결과가 없을 때만 eAT에 요청합니다.</p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ss-text-muted)]">공고 기간과 기관, 납품지역을 지정해 현품설명서를 조회합니다. 같은 조건은 DB 저장 데이터를 먼저 사용하고, 저장된 결과가 없을 때만 eAT에 요청합니다.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] px-3 py-2 text-xs font-semibold text-[var(--ss-text-subtle)]">
           <Database aria-hidden="true" className="size-4" />
@@ -348,6 +382,65 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
             {fieldErrors.demandOrganizationName ? <p id={`${generatedId}-demand-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.demandOrganizationName}</p> : null}
           </div>
         </div>
+        <fieldset className="min-w-0">
+          <legend className="text-sm font-semibold">납품 지역 <span className="text-xs font-medium text-[var(--ss-text-muted)]">선택</span></legend>
+          <div className="mt-1.5 grid min-w-0 gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label htmlFor={`${generatedId}-delivery-province`} className="block text-xs font-semibold text-[var(--ss-text-subtle)]">시·도</label>
+              <select
+                id={`${generatedId}-delivery-province`}
+                value={deliveryProvinceCode}
+                disabled={loading}
+                aria-invalid={Boolean(fieldErrors.deliveryProvinceCode)}
+                aria-describedby={`${generatedId}-delivery-help${fieldErrors.deliveryProvinceCode ? ` ${generatedId}-delivery-province-error` : ''}`}
+                onChange={(event) => {
+                  const nextCode = event.target.value;
+                  setDeliveryProvinceCode(isBidProvinceCode(nextCode) ? nextCode : '');
+                  setDeliveryAreaCode('');
+                  setFieldErrors((current) => ({
+                    ...current,
+                    deliveryProvinceCode: undefined,
+                    deliveryAreaCode: undefined,
+                  }));
+                }}
+                className="star-control mt-1.5 min-h-11 w-full min-w-0 px-3 text-sm"
+              >
+                <option value="">전국</option>
+                {bidProvinceOptions.map((option) => (
+                  <option key={option.code} value={option.code}>{option.label}</option>
+                ))}
+              </select>
+              {fieldErrors.deliveryProvinceCode ? <p id={`${generatedId}-delivery-province-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.deliveryProvinceCode}</p> : null}
+            </div>
+            <div className="min-w-0">
+              <label htmlFor={`${generatedId}-delivery-area`} className="block text-xs font-semibold text-[var(--ss-text-subtle)]">행정구</label>
+              <select
+                id={`${generatedId}-delivery-area`}
+                value={deliveryAreaCode}
+                disabled={loading || !deliveryProvinceCode || deliveryAreaOptions.length === 0}
+                aria-invalid={Boolean(fieldErrors.deliveryAreaCode)}
+                aria-describedby={`${generatedId}-delivery-help${fieldErrors.deliveryAreaCode ? ` ${generatedId}-delivery-area-error` : ''}`}
+                onChange={(event) => {
+                  const nextCode = event.target.value;
+                  const belongsToProvince = isBidAreaCode(nextCode)
+                    && deliveryAreaOptions.some((area) => area.code === nextCode);
+                  setDeliveryAreaCode(belongsToProvince ? nextCode : '');
+                  setFieldErrors((current) => ({ ...current, deliveryAreaCode: undefined }));
+                }}
+                className="star-control mt-1.5 min-h-11 w-full min-w-0 px-3 text-sm"
+              >
+                <option value="">{deliveryProvinceCode ? '행정구 전체' : '시·도를 먼저 선택해 주세요'}</option>
+                {deliveryAreaOptions.map((area) => (
+                  <option key={area.code} value={area.code}>
+                    {area.localName === deliveryProvince?.label ? `${area.localName} 전체` : area.localName}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.deliveryAreaCode ? <p id={`${generatedId}-delivery-area-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.deliveryAreaCode}</p> : null}
+            </div>
+          </div>
+          <p id={`${generatedId}-delivery-help`} className="mt-1.5 text-xs leading-5 text-[var(--ss-text-muted)]">eAT가 제공하는 납품장소 주소를 기준으로 검색합니다. 지역을 선택한 첫 조회는 전체 결과를 확인하므로 조금 더 걸릴 수 있습니다.</p>
+        </fieldset>
         <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="min-w-0">
             <label htmlFor={`${generatedId}-bid-name`} className="block text-sm font-semibold">입찰공고명 <span className="text-xs font-medium text-[var(--ss-text-muted)]">선택</span></label>
@@ -391,7 +484,7 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
           ) : (
             <div className="mt-4 rounded-[var(--ss-radius-lg)] border border-dashed border-[var(--ss-border-strong)] px-4 py-12 text-center">
               <p className="text-sm font-bold">조건에 맞는 eAT 입찰공고가 없습니다.</p>
-              <p className="mt-1 text-xs leading-5 text-[var(--ss-text-muted)]">기관명이나 공고 기간을 바꿔 다시 조회해 주세요. 0건 결과도 DB에 저장됩니다.</p>
+              <p className="mt-1 text-xs leading-5 text-[var(--ss-text-muted)]">기관명, 납품지역 또는 공고 기간을 바꿔 다시 조회해 주세요. 0건 결과도 DB에 저장됩니다.</p>
             </div>
           )}
 

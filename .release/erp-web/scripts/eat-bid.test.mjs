@@ -8,9 +8,12 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 let viteServer;
 let EatApiError;
+let EatBidRegionLookupError;
+let filterEatBidsByDeliveryRegion;
 let fetchEatBidPage;
 let formatEatDate;
 let lookupEatBids;
+let matchesEatDeliveryRegion;
 let parseEatBidQuery;
 let parseEatBidXml;
 
@@ -38,8 +41,9 @@ before(async () => {
   ({ EatApiError, parseEatBidXml } = await viteServer.ssrLoadModule('/db/eat-api-parser.ts'));
   ({ fetchEatBidPage } = await viteServer.ssrLoadModule('/db/eat-api-client.ts'));
   ({ formatEatDate } = await viteServer.ssrLoadModule('/app/lib/eat-date-format.ts'));
+  ({ filterEatBidsByDeliveryRegion, matchesEatDeliveryRegion } = await viteServer.ssrLoadModule('/app/lib/eat-delivery-region.ts'));
   ({ parseEatBidQuery } = await viteServer.ssrLoadModule('/app/lib/eat-bid-validation.ts'));
-  ({ lookupEatBids } = await viteServer.ssrLoadModule('/db/eat-bid-service.ts'));
+  ({ EatBidRegionLookupError, lookupEatBids } = await viteServer.ssrLoadModule('/db/eat-bid-service.ts'));
 });
 
 after(async () => {
@@ -75,6 +79,80 @@ const successXml = `<?xml version="1.0" encoding="UTF-8"?>
   </body>
 </response>`;
 
+function announcement(bidNo, deliveryAddress) {
+  return {
+    bidNo,
+    bidName: `${bidNo} 공고`,
+    statusName: '공고중',
+    announcementDate: '20260827',
+    announcementTime: '',
+    purchasingOrganizationName: '교육청',
+    demandOrganizationName: '테스트학교',
+    bidStartDate: '20260827',
+    bidEndDate: '20260828',
+    bidOpenDate: '',
+    bidOpenTime: '',
+    deliveryStartDate: '20260901',
+    deliveryEndDate: '20260930',
+    deliveryAddress,
+    basePrice: '1000',
+    itemName: '급식 식재료',
+    specs: [],
+  };
+}
+
+function memoryEatDependencies(items, upstreamTotal = items.length) {
+  const cache = new Map();
+  let fetchCount = 0;
+  const cacheKey = (query) => `${query.cacheScope ?? 'DEFAULT'}:${query.page}:${query.pageSize}`;
+  const store = (query, value, writeOptions = {}, overrides = {}) => {
+    const stored = {
+      queryHash: query.page.toString(16).padStart(64, '0'),
+      fresh: true,
+      generationId: writeOptions.generationId ?? null,
+      fetchedAt: writeOptions.fetchedAt ?? '2026-08-28T01:00:00.000Z',
+      expiresAt: writeOptions.fetchedAt
+        ? new Date(new Date(writeOptions.fetchedAt).valueOf() + (360 * 60_000)).toISOString()
+        : '2026-08-28T07:00:00.000Z',
+      total: value.total,
+      page: query.page,
+      pageSize: query.pageSize,
+      items: structuredClone(value.items),
+      ...overrides,
+    };
+    cache.set(cacheKey(query), stored);
+    return stored;
+  };
+  return {
+    get fetchCount() { return fetchCount; },
+    seedCache(query, value, writeOptions, overrides) {
+      return store(query, value, writeOptions, overrides);
+    },
+    dependencies: {
+      findCache: async (query) => cache.get(cacheKey(query)) ?? null,
+      fetchPage: async (query) => {
+        fetchCount += 1;
+        const offset = (query.page - 1) * query.pageSize;
+        return {
+          total: upstreamTotal,
+          page: query.page,
+          pageSize: query.pageSize,
+          items: items.slice(offset, offset + query.pageSize),
+        };
+      },
+      replaceCache: async (query, value, _ttlMinutes, writeOptions) => (
+        store(query, value, writeOptions)
+      ),
+      replaceCacheBatch: async (entries, _ttlMinutes, writeOptions) => (
+        entries.map(({ query, value }) => store(query, value, writeOptions))
+      ),
+      touchCache: async () => true,
+      withLock: async (_key, callback) => callback(),
+      ttlMinutes: 360,
+    },
+  };
+}
+
 test('formats eAT date variants as YYYY-MM-DD without changing descriptive text', () => {
   assert.equal(formatEatDate('20260731'), '2026-07-31');
   assert.equal(formatEatDate('2026.08.20'), '2026-08-20');
@@ -91,6 +169,215 @@ test('formats eAT date variants as YYYY-MM-DD without changing descriptive text'
   assert.equal(formatEatDate('현품설명서에 따름'), '현품설명서에 따름');
   assert.equal(formatEatDate(''), '-');
   assert.equal(formatEatDate('   '), '-');
+});
+
+test('matches delivery addresses by canonical province and administrative area', () => {
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEOUL-JUNG', '서울특별시 중구 세종대로 110'),
+    '11',
+    '11140',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('BUSAN-JUNG', '부산광역시 중구 중앙대로 120'),
+    '11',
+    '11140',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('CHEONAN', '충남 천안시 동남구 유량로 1'),
+    '44',
+    '44131',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('MOKPO', '전라남도 목포시 교육로 1'),
+    '12',
+    '12110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEJONG', '세종특별자치시 도움6로 42'),
+    '36',
+    '36110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEOUL-MILK', '서울우유협동조합 경기도 양주시 은현면'),
+    '11',
+    '',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEOUL-MILK', '서울우유협동조합 경기도 양주시 은현면'),
+    '41',
+    '41630',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('GWANGJU-CITY', '광주시 오포읍 신현로'),
+    '12',
+    '',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('GWANGJU-CITY', '광주시 오포읍 신현로'),
+    '41',
+    '41610',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('EXPLICIT-GYEONGGI', '경기도 광주시 오포읍 신현로'),
+    '41',
+    '',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('EXPLICIT-GYEONGGI', '경기도 광주시 오포읍 신현로'),
+    '41',
+    '41610',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('GWANGJU-DONG', '광주시 동구 금남로'),
+    '12',
+    '12210',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('GWANGJU-DONG', '광주시 동구 금남로'),
+    '41',
+    '41610',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMPACT-GWANGJU', '광주광역시북구교육로'),
+    '12',
+    '12300',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMPACT-JEONNAM', '전라남도목포시교육로'),
+    '12',
+    '12110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('MULTI', '서울특별시 중구 세종대로 / 경기도 수원시 장안구 정자로'),
+    '11',
+    '11140',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('MULTI', '서울특별시 중구 세종대로 / 경기도 수원시 장안구 정자로'),
+    '41',
+    '41111',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('INHERITED-PROVINCE', '경기도 수원시 장안구 정자로 / 성남시 분당구 판교로'),
+    '41',
+    '41135',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('CROSS-PROVINCE', '서울특별시 강남구 테헤란로 / 부산광역시 중구 중앙대로'),
+    '11',
+    '11140',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMPACT-ADMIN', '경기도수원시장안구정자로'),
+    '41',
+    '41111',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('BUSANJIN', '부산광역시 부산진구 중앙대로'),
+    '26',
+    '26230',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('JEJU-CITY', '제주특별자치도 제주시 첨단로'),
+    '50',
+    '50110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('WRONG-PARENT', '경기도성남시장안구정자로'),
+    '41',
+    '41111',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('EMBEDDED-AREA', '서울특별시 강남구매팀'),
+    '11',
+    '11680',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('EMBEDDED-COOP', '서울특별시 강남구협동조합'),
+    '11',
+    '11680',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('AMBIGUOUS-AREA', '중구 중앙대로'),
+    '11',
+    '11140',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEOUL-PROVINCE-ONLY', '서울특별시 관내'),
+    '11',
+    '',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('BUSAN-PROVINCE-ONLY', '부산광역시'),
+    '26',
+    '',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('DESCRIPTIVE-AREA', '대전광역시 동구 관내 학교'),
+    '30',
+    '30110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('DESCRIPTIVE-SEOUL', '서울특별시 중구 각 학교'),
+    '11',
+    '11140',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMMA-AREAS', '경기도 수원시 장안구 정자로, 성남시 분당구 판교로'),
+    '41',
+    '41135',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('AND-AREAS', '서울특별시 중구 세종대로 및 성남시 분당구 판교로'),
+    '41',
+    '41135',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('MIDDLE-DOT-AREAS', '서울특별시 중구 세종대로 · 성남시 분당구 판교로'),
+    '41',
+    '41135',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMMA-DAEJEON', '대전광역시, 동구 중앙로'),
+    '30',
+    '30110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMMA-SEOUL', '서울특별시, 중구 세종대로'),
+    '11',
+    '11140',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('HYPHEN-ADMIN', '경기도 수원시-장안구 정자로'),
+    '41',
+    '41111',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('NUMBERED-AREA', '1) 광주시 오포읍 신현로'),
+    '41',
+    '41610',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('COMPACT-SEJONG', '세종특별자치시도움6로42'),
+    '36',
+    '36110',
+  ), true);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('SEJONG-MILK', '세종우유공장'),
+    '36',
+    '',
+  ), false);
+  assert.equal(matchesEatDeliveryRegion(
+    announcement('UNKNOWN', '현품설명서에 따름'),
+    '11',
+    '',
+  ), false);
+
+  const filtered = filterEatBidsByDeliveryRegion([
+    announcement('SEOUL-JUNG', '서울특별시 중구 세종대로 110'),
+    announcement('BUSAN-JUNG', '부산광역시 중구 중앙대로 120'),
+  ], '11', '11140');
+  assert.deepEqual(filtered.map((item) => item.bidNo), ['SEOUL-JUNG']);
 });
 
 test('parses repeated eAT announcement and item wrappers without losing leading zeroes', () => {
@@ -193,6 +480,8 @@ test('normalizes raw and URL-encoded service keys exactly once', async () => {
     useOrganizationName: '교육청',
     demandOrganizationName: '',
     bidName: '',
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
     page: 1,
     pageSize: 20,
   };
@@ -231,6 +520,8 @@ test('bounds streamed eAT bodies and keeps the timeout active until the body com
     useOrganizationName: '서울교육청',
     demandOrganizationName: '',
     bidName: '',
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
     page: 1,
     pageSize: 20,
   };
@@ -292,17 +583,280 @@ test('normalizes valid search parameters and enforces the calendar three-month b
     announcementEndDate: '2026-04-30',
     useOrganizationName: '  서울   교육청  ',
     demandOrganizationName: ' 한빛초 ',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
   });
   const parsed = parseEatBidQuery(parameters);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.query.useOrganizationName, '서울 교육청');
   assert.equal(parsed.query.page, 1);
   assert.equal(parsed.query.pageSize, 20);
+  assert.equal(parsed.query.deliveryProvinceCode, '30');
+  assert.equal(parsed.query.deliveryAreaCode, '30110');
+
+  parameters.set('deliveryAreaCode', '11140');
+  const mismatchedRegion = parseEatBidQuery(parameters);
+  assert.equal(mismatchedRegion.ok, false);
+  assert.match(mismatchedRegion.message, /선택한 시·도/);
+  parameters.set('deliveryAreaCode', '30110');
 
   parameters.set('announcementEndDate', '2026-05-01');
   const tooLong = parseEatBidQuery(parameters);
   assert.equal(tooLong.ok, false);
   assert.match(tooLong.message, /최대 3개월/);
+});
+
+test('scans every cached eAT page before applying delivery region pagination', async () => {
+  const items = Array.from({ length: 385 }, (_, index) => announcement(
+    `BID-${String(index + 1).padStart(3, '0')}`,
+    index < 41
+      ? `대전광역시 동구 교육로 ${index + 1}`
+      : `서울특별시 중구 세종대로 ${index + 1}`,
+  ));
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
+    page: 2,
+    pageSize: 20,
+  };
+
+  const result = await lookupEatBids(query, harness.dependencies);
+  assert.equal(result.source, 'EAT');
+  assert.equal(result.total, 41);
+  assert.equal(result.page, 2);
+  assert.equal(result.items.length, 20);
+  assert.equal(result.items[0].bidNo, 'BID-021');
+  assert.equal(result.items[19].bidNo, 'BID-040');
+  assert.equal(harness.fetchCount, 8);
+
+  const cachedOtherRegion = await lookupEatBids({
+    ...query,
+    deliveryProvinceCode: '11',
+    deliveryAreaCode: '11140',
+    page: 1,
+  }, harness.dependencies);
+  assert.equal(cachedOtherRegion.source, 'CACHE');
+  assert.equal(cachedOtherRegion.total, 344);
+  assert.equal(cachedOtherRegion.items.length, 20);
+  assert.equal(harness.fetchCount, 8);
+
+  const unscopedPage = await lookupEatBids({
+    ...query,
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    page: 1,
+    pageSize: 50,
+  }, harness.dependencies);
+  assert.equal(unscopedPage.source, 'EAT');
+  assert.equal(harness.fetchCount, 9);
+});
+
+test('refreshes every page instead of combining different cache generations', async () => {
+  const items = Array.from({ length: 100 }, (_, index) => announcement(
+    `GEN-${String(index + 1).padStart(3, '0')}`,
+    index < 25 ? '대전광역시 동구 교육로 1' : '서울특별시 중구 세종대로 1',
+  ));
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
+    page: 1,
+    pageSize: 20,
+  };
+  const base = {
+    ...query,
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    cacheScope: 'REGIONAL_SCAN_V1',
+    pageSize: 50,
+  };
+  harness.seedCache(
+    { ...base, page: 1 },
+    { total: 100, items: items.slice(0, 50) },
+    { generationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fetchedAt: '2026-08-28T01:00:00.000Z' },
+  );
+  harness.seedCache(
+    { ...base, page: 2 },
+    { total: 100, items: items.slice(50) },
+    { generationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', fetchedAt: '2026-08-28T02:00:00.000Z' },
+  );
+
+  const result = await lookupEatBids(query, harness.dependencies);
+  assert.equal(result.source, 'EAT');
+  assert.equal(result.total, 25);
+  assert.equal(harness.fetchCount, 2);
+});
+
+test('uses only a complete stale generation when an upstream regional refresh fails', async () => {
+  const items = Array.from({ length: 100 }, (_, index) => announcement(
+    `STALE-${String(index + 1).padStart(3, '0')}`,
+    index < 25 ? '대전광역시 동구 교육로 1' : '서울특별시 중구 세종대로 1',
+  ));
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
+    page: 1,
+    pageSize: 20,
+  };
+  const base = {
+    ...query,
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    cacheScope: 'REGIONAL_SCAN_V1',
+    pageSize: 50,
+  };
+  const writeOptions = {
+    generationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    fetchedAt: '2026-08-27T01:00:00.000Z',
+  };
+  harness.seedCache(
+    { ...base, page: 1 },
+    { total: 100, items: items.slice(0, 50) },
+    writeOptions,
+    { fresh: false },
+  );
+  harness.seedCache(
+    { ...base, page: 2 },
+    { total: 100, items: items.slice(50) },
+    writeOptions,
+    { fresh: false },
+  );
+  harness.dependencies.fetchPage = async () => {
+    throw new EatApiError('NETWORK', 'test-only regional refresh failure');
+  };
+
+  const result = await lookupEatBids(query, harness.dependencies);
+  assert.equal(result.source, 'STALE_CACHE');
+  assert.equal(result.total, 25);
+  assert.match(result.warning, /동일 시점/);
+});
+
+test('does not use mixed regional cache pages as a stale fallback', async () => {
+  const items = Array.from({ length: 100 }, (_, index) => announcement(
+    `MIXED-${String(index + 1).padStart(3, '0')}`,
+    '대전광역시 동구 교육로 1',
+  ));
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
+    page: 1,
+    pageSize: 20,
+  };
+  const base = {
+    ...query,
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    cacheScope: 'REGIONAL_SCAN_V1',
+    pageSize: 50,
+  };
+  harness.seedCache(
+    { ...base, page: 1 },
+    { total: 100, items: items.slice(0, 50) },
+    { generationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', fetchedAt: '2026-08-27T01:00:00.000Z' },
+    { fresh: false },
+  );
+  harness.seedCache(
+    { ...base, page: 2 },
+    { total: 100, items: items.slice(50) },
+    { generationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', fetchedAt: '2026-08-27T02:00:00.000Z' },
+    { fresh: false },
+  );
+  harness.dependencies.fetchPage = async () => {
+    throw new EatApiError('NETWORK', 'test-only mixed generation failure');
+  };
+
+  await assert.rejects(
+    lookupEatBids(query, harness.dependencies),
+    (error) => error instanceof EatApiError && error.code === 'NETWORK',
+  );
+});
+
+test('does not hide an atomic regional cache publish failure behind stale data', async () => {
+  const items = Array.from({ length: 50 }, (_, index) => announcement(
+    `PUBLISH-${String(index + 1).padStart(3, '0')}`,
+    '대전광역시 동구 교육로 1',
+  ));
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '30',
+    deliveryAreaCode: '30110',
+    page: 1,
+    pageSize: 20,
+  };
+  const base = {
+    ...query,
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    cacheScope: 'REGIONAL_SCAN_V1',
+    pageSize: 50,
+  };
+  harness.seedCache(
+    { ...base, page: 1 },
+    { total: 50, items },
+    { generationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff', fetchedAt: '2026-08-27T01:00:00.000Z' },
+    { fresh: false },
+  );
+  harness.dependencies.replaceCacheBatch = async () => {
+    throw new Error('test-only atomic publish failure');
+  };
+
+  await assert.rejects(
+    lookupEatBids(query, harness.dependencies),
+    /test-only atomic publish failure/,
+  );
+});
+
+test('rejects an over-broad regional scan instead of returning partial totals', async () => {
+  const items = Array.from(
+    { length: 50 },
+    (_, index) => announcement(`LIMIT-${index + 1}`, '서울특별시 중구 세종대로 110'),
+  );
+  const harness = memoryEatDependencies(items, 1_001);
+  await assert.rejects(
+    lookupEatBids({
+      announcementStartDate: '2026-07-29',
+      announcementEndDate: '2026-08-27',
+      useOrganizationName: '교육청',
+      demandOrganizationName: '',
+      bidName: '',
+      deliveryProvinceCode: '11',
+      deliveryAreaCode: '',
+      page: 1,
+      pageSize: 20,
+    }, harness.dependencies),
+    (error) => error instanceof EatBidRegionLookupError
+      && error.status === 400
+      && /1,000건/.test(error.message),
+  );
+  assert.equal(harness.fetchCount, 1);
 });
 
 test('uses the database after one eAT cache miss', async () => {
@@ -312,6 +866,8 @@ test('uses the database after one eAT cache miss', async () => {
     useOrganizationName: '서울교육청',
     demandOrganizationName: '',
     bidName: '',
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
     page: 1,
     pageSize: 20,
   };
@@ -372,6 +928,8 @@ test('returns expired DB data when the eAT refresh fails', async () => {
     useOrganizationName: '서울교육청',
     demandOrganizationName: '',
     bidName: '',
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
     page: 1,
     pageSize: 20,
   }, {
@@ -403,6 +961,8 @@ test('does not misreport a database write failure as an eAT stale fallback', asy
       useOrganizationName: '서울교육청',
       demandOrganizationName: '',
       bidName: '',
+      deliveryProvinceCode: '',
+      deliveryAreaCode: '',
       page: 1,
       pageSize: 20,
     }, {

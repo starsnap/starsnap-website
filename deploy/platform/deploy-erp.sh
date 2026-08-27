@@ -294,16 +294,27 @@ secret_specs="$(docker service inspect \
   "$web_service")"
 readonly secret_specs
 secret_update=()
+mapfile -t existing_eat_secret_names < <(
+  awk -F'|' -v target='eat-api-service-key' '$2 == target {print $1}' <<<"$secret_specs"
+)
+if (( ${#existing_eat_secret_names[@]} > 1 )); then
+  echo 'Multiple Docker secrets are mounted at the eAT secret target.' >&2
+  exit 1
+fi
 if awk -F'|' -v name="$ERP_EAT_API_SECRET_NAME" -v target='eat-api-service-key' \
   '$1 == name && $2 == target && $3 == "1000" && $4 == "1000" && $5 == "256" {found=1} END {exit found ? 0 : 1}' \
   <<<"$secret_specs"; then
   :
-elif awk -F'|' -v name="$ERP_EAT_API_SECRET_NAME" -v target='eat-api-service-key' \
-  '$1 == name || $2 == target {found=1} END {exit found ? 0 : 1}' \
+elif awk -F'|' -v name="$ERP_EAT_API_SECRET_NAME" \
+  '$1 == name {found=1} END {exit found ? 0 : 1}' \
   <<<"$secret_specs"; then
-  echo 'The existing eAT secret mount does not match the required read-only specification.' >&2
+  echo 'The requested eAT secret is already mounted with an unexpected target or permission.' >&2
   exit 1
 else
+  if (( ${#existing_eat_secret_names[@]} == 1 )); then
+    echo "Rotating eAT secret mount: ${existing_eat_secret_names[0]} -> $ERP_EAT_API_SECRET_NAME"
+    secret_update+=(--secret-rm "${existing_eat_secret_names[0]}")
+  fi
   secret_update+=(
     --secret-add
     "source=$ERP_EAT_API_SECRET_NAME,target=eat-api-service-key,uid=1000,gid=1000,mode=0400"
@@ -338,6 +349,7 @@ deployed_secret_specs="$(docker service inspect \
   "$web_service")"
 grep -Fxq "$ERP_EAT_API_SECRET_NAME|eat-api-service-key|1000|1000|256" \
   <<<"$deployed_secret_specs"
+test "$(awk -F'|' '$2 == "eat-api-service-key" {count++} END {print count + 0}' <<<"$deployed_secret_specs")" -eq 1
 service_env="$(docker service inspect \
   --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' \
   "$web_service")"

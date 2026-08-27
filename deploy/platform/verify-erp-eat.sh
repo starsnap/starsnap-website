@@ -48,7 +48,8 @@ bidder_context="$(docker exec "$postgres_container" \
     FROM tenants t
     JOIN tenant_memberships tm ON tm.tenant_id = t.id
     JOIN erp_users u ON u.id = tm.user_id
-    WHERE t.organization_type = 'BIDDER'
+    WHERE t.code = 'ORG-8025A70B4CF24D018F67'
+      AND t.organization_type = 'BIDDER'
       AND t.status = 'ACTIVE'
       AND u.status = 'ACTIVE'
     ORDER BY t.code, u.id
@@ -79,8 +80,8 @@ docker exec "$postgres_container" \
     VALUES ('$session_hash', '$user_id', clock_timestamp() + interval '10 minutes')
   " >/dev/null
 
-end_date="$(date -u +%Y-%m-%d)"
-start_date="$(date -u -d '89 days ago' +%Y-%m-%d)"
+start_date='2026-07-29'
+end_date='2026-08-27'
 smoke_page=1
 readonly start_date end_date smoke_page
 
@@ -92,13 +93,13 @@ docker exec "$postgres_container" \
   --command "
     UPDATE eat_bid_query_cache
     SET expires_at = fetched_at + interval '1 microsecond'
-    WHERE normalized_filters ->> 'useOrganizationName' = '서울특별시교육청'
+    WHERE normalized_filters ->> 'useOrganizationName' = '교육청'
       AND normalized_filters ->> 'demandOrganizationName' = ''
       AND normalized_filters ->> 'bidName' = ''
       AND start_date = '$start_date'::date
       AND end_date = '$end_date'::date
       AND page = $smoke_page
-      AND page_size = 1
+      AND page_size = 20
   " >/dev/null
 
 smoke_payload="$(docker exec "$web_container" node -e '
@@ -122,9 +123,9 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
       url.searchParams.set("tenant", smoke.tenant);
       url.searchParams.set("announcementStartDate", smoke.startDate);
       url.searchParams.set("announcementEndDate", smoke.endDate);
-      url.searchParams.set("useOrganizationName", "서울특별시교육청");
+      url.searchParams.set("useOrganizationName", "교육청");
       url.searchParams.set("page", String(smoke.page));
-      url.searchParams.set("pageSize", "1");
+      url.searchParams.set("pageSize", "20");
       const headers = {
         host: "erp.starsnap.kr",
         origin: "https://erp.starsnap.kr",
@@ -132,10 +133,10 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
         "x-forwarded-proto": "https",
         cookie: `__Host-starsnap_session=${smoke.token}`,
       };
-      async function lookup({ retryTransient = false } = {}) {
+      async function lookup({ endpoint = url, requestHeaders = headers, retryTransient = false } = {}) {
         const maximumAttempts = retryTransient ? 3 : 1;
         for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
-          const response = await fetch(url, { headers });
+          const response = await fetch(endpoint, { headers: requestHeaders });
           const body = await response.json().catch(() => ({}));
           if (response.ok) return body;
           const transient = [502, 503, 504].includes(response.status);
@@ -148,16 +149,35 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
       }
       const first = await lookup({ retryTransient: true });
       const second = await lookup();
+      const publicUrl = new URL(`${url.pathname}${url.search}`, "https://erp.starsnap.kr");
+      if (publicUrl.origin !== "https://erp.starsnap.kr") {
+        throw new Error(`Unexpected public ERP origin: ${publicUrl.origin}`);
+      }
+      const publicResult = await lookup({
+        endpoint: publicUrl,
+        requestHeaders: { cookie: `__Host-starsnap_session=${smoke.token}` },
+        retryTransient: true,
+      });
       if (first.source !== "EAT") throw new Error(`Expected EAT source, got ${first.source}`);
       if (second.source !== "CACHE") throw new Error(`Expected CACHE source, got ${second.source}`);
+      if (publicResult.source !== "CACHE") {
+        throw new Error(`Expected public CACHE source, got ${publicResult.source}`);
+      }
       if (first.cachedAt !== second.cachedAt || first.total !== second.total) {
         throw new Error("Cached response does not match the upstream response");
       }
-      if (!Array.isArray(first.items) || first.items.length !== 1) {
-        throw new Error(`Expected one live eAT announcement, got ${first.items?.length ?? "invalid"}`);
+      const expectedItemCount = Math.min(20, first.total);
+      if (!Array.isArray(first.items) || first.items.length !== expectedItemCount) {
+        throw new Error(`Expected ${expectedItemCount} live eAT announcements, got ${first.items?.length ?? "invalid"}`);
+      }
+      if (first.page !== 1 || first.pageSize !== 20 || first.total < 1) {
+        throw new Error(`Unexpected eAT pagination: page=${first.page} pageSize=${first.pageSize} total=${first.total}`);
       }
       if (JSON.stringify(first.items) !== JSON.stringify(second.items)) {
         throw new Error("Cached eAT announcement content differs from the upstream response");
+      }
+      if (JSON.stringify(second) !== JSON.stringify(publicResult)) {
+        throw new Error("Public ERP response differs from the verified container response");
       }
       const specCount = first.items.reduce(
         (count, item) => count + (Array.isArray(item.specs) ? item.specs.length : 0),
@@ -167,6 +187,7 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
       console.log(JSON.stringify({
         firstSource: first.source,
         secondSource: second.source,
+        publicSource: publicResult.source,
         total: first.total,
         itemCount: first.items.length,
         specCount,
@@ -189,7 +210,17 @@ spec_count="$(printf '%s' "$smoke_result" | docker exec --interactive "$web_cont
     process.stdout.write(String(parsed.specCount));
   });
 ')"
-readonly spec_count
+item_count="$(printf '%s' "$smoke_result" | docker exec --interactive "$web_container" node -e '
+  process.stdin.setEncoding("utf8");
+  let value = "";
+  process.stdin.on("data", chunk => value += chunk);
+  process.stdin.on("end", () => {
+    const parsed = JSON.parse(value);
+    if (!Number.isSafeInteger(parsed.itemCount) || parsed.itemCount < 1) process.exit(1);
+    process.stdout.write(String(parsed.itemCount));
+  });
+')"
+readonly spec_count item_count
 
 cache_counts="$(docker exec "$postgres_container" \
   psql --username mealops --dbname mealops --tuples-only --no-align \
@@ -197,13 +228,13 @@ cache_counts="$(docker exec "$postgres_container" \
     WITH matched AS (
       SELECT query_hash
       FROM eat_bid_query_cache
-      WHERE normalized_filters ->> 'useOrganizationName' = '서울특별시교육청'
+      WHERE normalized_filters ->> 'useOrganizationName' = '교육청'
         AND normalized_filters ->> 'demandOrganizationName' = ''
         AND normalized_filters ->> 'bidName' = ''
         AND start_date = '$start_date'::date
         AND end_date = '$end_date'::date
         AND page = $smoke_page
-        AND page_size = 1
+        AND page_size = 20
         AND expires_at > fetched_at
     )
     SELECT
@@ -214,6 +245,6 @@ cache_counts="$(docker exec "$postgres_container" \
 readonly cache_counts
 IFS='|' read -r cache_rows announcement_rows specification_rows <<<"$cache_counts"
 test "$cache_rows" = '1'
-test "$announcement_rows" = '1'
+test "$announcement_rows" = "$item_count"
 test "$specification_rows" = "$spec_count"
 echo 'Authenticated eAT upstream-to-DB-cache verification passed.'

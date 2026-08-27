@@ -29,12 +29,14 @@ record_event() {
 }
 
 reset_state() {
-  local pre_state="$1" verify_result="$2"
+  local pre_state="$1" verify_result="$2" mounted_secret_name="${3:-erp-eat-api-key-v1}"
   find "$FAKE_ERP_DEPLOY_ROOT" -mindepth 1 -delete
   write_state phase previous
   write_state update-state completed
   write_state failure-action rollback
   write_state verify-result "$verify_result"
+  write_state previous-secret "$mounted_secret_name"
+  write_state current-secret "$mounted_secret_name"
   : >"$(state events)"
   if [[ "$pre_state" == healthy ]]; then
     write_state replicas 1/1
@@ -94,7 +96,7 @@ docker() {
           fi
           ;;
         *'.Spec.TaskTemplate.ContainerSpec.Secrets'*)
-          printf '%s|eat-api-service-key|1000|1000|256\n' "$ERP_EAT_API_SECRET_NAME"
+          printf '%s|eat-api-service-key|1000|1000|256\n' "$(read_state current-secret)"
           ;;
         *'.Spec.TaskTemplate.ContainerSpec.Env'*)
           printf '%s\n' \
@@ -120,6 +122,7 @@ docker() {
       printf 'starsnap-erp_web %s\n' "$(read_state replicas)"
       ;;
     service:update)
+      local secret_remove='' secret_add='' secret_source=''
       while (( $# > 0 )); do
         case "$1" in
           --image)
@@ -130,7 +133,15 @@ docker() {
             action="$2"
             shift 2
             ;;
-          --env-add|--secret-add)
+          --env-add)
+            shift 2
+            ;;
+          --secret-rm)
+            secret_remove="$2"
+            shift 2
+            ;;
+          --secret-add)
+            secret_add="$2"
             shift 2
             ;;
           *)
@@ -140,6 +151,14 @@ docker() {
       done
       if [[ -n "$image" ]]; then
         test "$image" = "$FAKE_LOCAL_IMAGE"
+        if [[ -n "$secret_remove" ]]; then
+          write_state secret-rm "$secret_remove"
+        fi
+        if [[ -n "$secret_add" ]]; then
+          write_state secret-add "$secret_add"
+          secret_source="${secret_add%%,*}"
+          write_state current-secret "${secret_source#source=}"
+        fi
         write_state phase candidate
         write_state replicas 1/1
         write_state update-state completed
@@ -155,6 +174,7 @@ docker() {
       ;;
     service:rollback)
       write_state phase previous
+      write_state current-secret "$(read_state previous-secret)"
       write_state replicas 1/1
       write_state update-state rollback_completed
       write_state failure-action rollback
@@ -250,7 +270,7 @@ run_deploy() {
   local output_file="$1"
   (
     export ALLOW_ERP_DEPLOY='DEPLOY-ERP-192.168.1.103'
-    export ERP_EAT_API_SECRET_NAME='erp-eat-api-key-v1'
+    export ERP_EAT_API_SECRET_NAME='erp-eat-api-key-v2'
     export ERP_WEB_IMAGE="$FAKE_ERP_WEB_IMAGE"
     # shellcheck disable=SC1091 # The repository root is the required working directory.
     source deploy/platform/deploy-erp.sh
@@ -275,6 +295,11 @@ assert_not_contains() {
   fi
 }
 
+assert_secret_rotation_requested() {
+  test "$(read_state secret-rm)" = 'erp-eat-api-key-v1'
+  test "$(read_state secret-add)" = 'source=erp-eat-api-key-v2,target=eat-api-service-key,uid=1000,gid=1000,mode=0400'
+}
+
 readonly FAKE_PREVIOUS_IMAGE='registry.example/starsnap-erp-web:previous'
 FAKE_ERP_WEB_IMAGE="ghcr.io/starsnap/starsnap-erp-web@sha256:$(printf 'a%.0s' {1..64})"
 FAKE_LOCAL_IMAGE="starsnap.invalid/starsnap-platform-local/starsnap-erp-web:sha-$(printf 'a%.0s' {1..64})"
@@ -292,7 +317,9 @@ set -e
 test "$healthy_failure_status" -ne 0
 assert_contains "$(state events)" 'candidate-update|none'
 assert_contains "$(state events)" rollback
+assert_secret_rotation_requested
 test "$(read_state phase)" = previous
+test "$(read_state current-secret)" = 'erp-eat-api-key-v1'
 test "$(read_state update-state)" = rollback_completed
 assert_contains "$healthy_failure_output" 'ERP rollback verified:'
 assert_not_contains "$healthy_failure_output" 'CRITICAL:'
@@ -309,7 +336,9 @@ set -e
 test "$unhealthy_failure_status" -ne 0
 assert_contains "$(state events)" 'candidate-update|pause'
 assert_not_contains "$(state events)" rollback
+assert_secret_rotation_requested
 test "$(read_state phase)" = candidate
+test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
 test "$(read_state failure-action)" = pause
 assert_contains "$unhealthy_failure_output" 'refusing to roll back to its unavailable specification'
 assert_contains "$unhealthy_failure_output" 'candidate ERP image is running and core-healthy'
@@ -322,7 +351,9 @@ reset_state unhealthy pass
 write_state failure-action continue
 recovery_success_output="$(state recovery-success.out)"
 run_deploy "$recovery_success_output"
+assert_secret_rotation_requested
 test "$(read_state phase)" = candidate
+test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
 test "$(read_state failure-action)" = continue
 test -e "$(state candidate-service-image-inspected)"
 test -e "$(state candidate-running-image-inspected)"
@@ -333,5 +364,16 @@ test "$(sed -n '3p' "$(state events)")" = 'failure-action-update|continue'
 test "$(wc -l <"$(state events)" | tr -d ' ')" = 3
 assert_contains "$recovery_success_output" "ERP-only deployment verified: image=$FAKE_ERP_WEB_IMAGE"
 assert_not_contains "$recovery_success_output" 'CRITICAL:'
+
+# A service already using the requested version must not receive redundant
+# secret remove/add operations during an otherwise successful image update.
+reset_state healthy pass 'erp-eat-api-key-v2'
+idempotent_output="$(state idempotent-success.out)"
+run_deploy "$idempotent_output"
+test ! -e "$(state secret-rm)"
+test ! -e "$(state secret-add)"
+test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
+assert_contains "$idempotent_output" "ERP-only deployment verified: image=$FAKE_ERP_WEB_IMAGE"
+assert_not_contains "$idempotent_output" 'Rotating eAT secret mount:'
 
 echo 'ERP recovery deployment tests passed.'

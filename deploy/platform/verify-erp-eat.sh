@@ -81,10 +81,24 @@ docker exec "$postgres_container" \
 
 end_date="$(date -u +%Y-%m-%d)"
 start_date="$(date -u -d '89 days ago' +%Y-%m-%d)"
-clock_value="$(date -u +%H%M%S)"
-smoke_page=$((10#$clock_value % 500 + 1))
+smoke_page=1
 readonly start_date end_date smoke_page
-[[ "$smoke_page" -ge 1 && "$smoke_page" -le 500 ]]
+
+# Refresh only this deterministic smoke-query cache entry so the first request
+# proves a real upstream call and the second proves the DB cache path. The
+# canonical row is immediately recreated by the first request.
+docker exec "$postgres_container" \
+  psql --username mealops --dbname mealops --no-psqlrc --quiet --set ON_ERROR_STOP=1 \
+  --command "
+    DELETE FROM eat_bid_query_cache
+    WHERE normalized_filters ->> 'useOrganizationName' = '서울특별시교육청'
+      AND normalized_filters ->> 'demandOrganizationName' = ''
+      AND normalized_filters ->> 'bidName' = ''
+      AND start_date = '$start_date'::date
+      AND end_date = '$end_date'::date
+      AND page = $smoke_page
+      AND page_size = 1
+  " >/dev/null
 
 smoke_payload="$(node -e '
   process.stdout.write(JSON.stringify({

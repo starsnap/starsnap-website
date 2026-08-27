@@ -291,8 +291,35 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: deploy/platform/eat-workerd-diagnostic-worker.mjs
+          sparse-checkout: |
+            deploy/platform/eat-workerd-diagnostic-worker.mjs
+            package.json
+            package-lock.json
           sparse-checkout-cone-mode: false
+
+      - name: Set up the pinned Node.js runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install the pinned workerd diagnostic runtime
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Prepare the isolated diagnostic directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostic_dir="$RUNNER_TEMP/eat-workerd-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          case "$diagnostic_dir" in
+            "$RUNNER_TEMP"/eat-workerd-*) ;;
+            *) exit 1 ;;
+          esac
+          mkdir -p "$diagnostic_dir"
+          chmod 700 "$diagnostic_dir"
+          cp deploy/platform/eat-workerd-diagnostic-worker.mjs "$diagnostic_dir/worker.mjs"
+          printf 'DIAGNOSTIC_DIR=%s\n' "$diagnostic_dir" >>"$GITHUB_ENV"
 
       - name: Exercise the exact eAT response path in workerd
         shell: bash
@@ -300,22 +327,35 @@ jobs:
           EAT_API_SERVICE_KEY: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
         run: |
           set -euo pipefail
-          test -n "$EAT_API_SERVICE_KEY"
-          diagnostic_dir="$RUNNER_TEMP/eat-workerd-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          diagnostic_dir="${DIAGNOSTIC_DIR:-}"
           case "$diagnostic_dir" in
             "$RUNNER_TEMP"/eat-workerd-*) ;;
             *) exit 1 ;;
           esac
+          worker_pid=''
+          cleanup() {
+            if [ -n "$worker_pid" ]; then
+              kill "$worker_pid" 2>/dev/null || true
+              wait "$worker_pid" 2>/dev/null || true
+            fi
+            if [ -d "$diagnostic_dir" ]; then
+              find "$diagnostic_dir" -depth -delete
+            fi
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          test -n "$EAT_API_SERVICE_KEY"
           response_file="$diagnostic_dir/response.json"
           log_file="$diagnostic_dir/wrangler.log"
-          mkdir -p "$diagnostic_dir"
-          chmod 700 "$diagnostic_dir"
-          cp deploy/platform/eat-workerd-diagnostic-worker.mjs "$diagnostic_dir/worker.mjs"
+          umask 077
           printf 'EAT_API_SERVICE_KEY=%s\n' "$EAT_API_SERVICE_KEY" >"$diagnostic_dir/.dev.vars"
-          chmod 600 "$diagnostic_dir/.dev.vars"
+          unset EAT_API_SERVICE_KEY
           cd "$diagnostic_dir"
 
-          npx --yes wrangler@4.92.0 dev worker.mjs \
+          "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" dev worker.mjs \
             --local \
             --ip 127.0.0.1 \
             --port 8787 \
@@ -323,14 +363,6 @@ jobs:
             --show-interactive-dev-session=false \
             >"$log_file" 2>&1 &
           worker_pid=$!
-          cleanup() {
-            kill "$worker_pid" 2>/dev/null || true
-            wait "$worker_pid" 2>/dev/null || true
-            if [ -d "$diagnostic_dir" ]; then
-              find "$diagnostic_dir" -depth -delete
-            fi
-          }
-          trap cleanup EXIT
 
           http_code=''
           for _ in $(seq 1 30); do
@@ -351,5 +383,38 @@ jobs:
           node -e '
             const fs = require("node:fs");
             const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            if (!result.ok || result.stage !== "complete") process.exit(1);
+            const successCodes = new Set(["0", "00", "0000"]);
+            const integer = (value) => Number.isInteger(value) ? value : NaN;
+            const total = integer(result.totalCount);
+            const pageCount = integer(result.pageNo);
+            const pageSize = integer(result.numOfRows);
+            const itemCount = integer(result.itemCount);
+            const expectedPageCount = Math.max(Math.ceil(total / 20), 1);
+            const expectedItemCount = Math.min(20, total);
+            if (
+              !result.ok ||
+              result.stage !== "complete" ||
+              !successCodes.has(result.resultCode) ||
+              result.requestedPage !== 1 ||
+              result.requestedPageSize !== 20 ||
+              total < 1 ||
+              pageSize !== 20 ||
+              pageCount !== expectedPageCount ||
+              itemCount !== expectedItemCount
+            ) process.exit(1);
           ' "$response_file"
+
+      - name: Remove diagnostic artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostic_dir="${DIAGNOSTIC_DIR:-}"
+          case "$diagnostic_dir" in
+            "$RUNNER_TEMP"/eat-workerd-*) ;;
+            '') exit 0 ;;
+            *) exit 1 ;;
+          esac
+          if [ -d "$diagnostic_dir" ]; then
+            find "$diagnostic_dir" -depth -delete
+          fi

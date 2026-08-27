@@ -1,5 +1,8 @@
 const endpoint = 'https://apis.data.go.kr/B552845/eaTPubServiceN3/eaTBidListN3';
 const maximumResponseBytes = 2 * 1024 * 1024;
+const successfulResultCodes = new Set(['0', '00', '0000']);
+const requestedPage = 1;
+const requestedPageSize = 20;
 
 function safeMessage(error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -18,8 +21,8 @@ export default {
       const key = decodeURIComponent(env.EAT_API_SERVICE_KEY.trim());
       const url = new URL(endpoint);
       url.searchParams.set('serviceKey', key);
-      url.searchParams.set('pageNo', '1');
-      url.searchParams.set('numOfRows', '20');
+      url.searchParams.set('pageNo', String(requestedPage));
+      url.searchParams.set('numOfRows', String(requestedPageSize));
       url.searchParams.set('ancmStsrDt', '20260729');
       url.searchParams.set('ancmEndDt', '20260827');
       url.searchParams.set('useOrganNm', '교육청');
@@ -58,18 +61,43 @@ export default {
       stage = 'inspect';
       const xml = chunks.join('');
       const valueOf = (tag) => xml.match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>'))?.[1] ?? null;
-      return Response.json({
-        ok: true,
-        stage: 'complete',
+      const integerValueOf = (tag) => {
+        const value = valueOf(tag);
+        return value !== null && /^\d+$/.test(value) ? Number(value) : null;
+      };
+      const resultCode = valueOf('resultCode');
+      const totalCount = integerValueOf('totalCount');
+      const pageNo = integerValueOf('pageNo');
+      const numOfRows = integerValueOf('numOfRows');
+      const itemCount = (xml.match(/<item(?:\s[^>]*)?>/g) ?? []).length;
+      const expectedPageCount = totalCount === null
+        ? null
+        : Math.max(Math.ceil(totalCount / requestedPageSize), 1);
+      const expectedItemCount = totalCount === null
+        ? null
+        : Math.min(requestedPageSize, totalCount);
+      const validBody =
+        successfulResultCodes.has(resultCode) &&
+        totalCount !== null &&
+        totalCount > 0 &&
+        pageNo === expectedPageCount &&
+        numOfRows === requestedPageSize &&
+        itemCount === expectedItemCount;
+      const diagnostic = {
+        ok: validBody,
+        stage: validBody ? 'complete' : 'inspect',
+        requestedPage,
+        requestedPageSize,
         status: response.status,
         bytes,
         contentType: response.headers.get('content-type'),
-        resultCode: valueOf('resultCode'),
-        totalCount: valueOf('totalCount'),
-        pageNo: valueOf('pageNo'),
-        numOfRows: valueOf('numOfRows'),
-        itemCount: (xml.match(/<item>/g) ?? []).length,
-      });
+        resultCode,
+        totalCount,
+        pageNo,
+        numOfRows,
+        itemCount,
+      };
+      return Response.json(diagnostic, { status: validBody ? 200 : 502 });
     } catch (error) {
       return Response.json({
         ok: false,

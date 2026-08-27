@@ -166,17 +166,17 @@ jobs:
             --format '{{range .Config.Env}}{{println .}}{{end}}' \
             "$api_container" \
             | awk -F= '$1 == "SERVER_LOG_BASE_URL" {print "LogRoute=" $0; count++} END {if (count == 0) print "LogRouteAbsent=true"; if (count > 1) exit 2}'
-          website_containers="$(docker ps \
-            --filter 'label=com.docker.swarm.service.name=starsnap-company_website' \
+          probe_containers="$(docker ps \
+            --filter 'label=com.docker.swarm.service.name=starsnap-erp_web' \
             --filter status=running \
             --format '{{.ID}}')"
-          printf 'WebsiteContainers=%s\n' "$(awk 'NF {count++} END {print count + 0}' <<<"$website_containers")"
-          while IFS= read -r website_container; do
-            test -n "$website_container" || continue
+          printf 'ProbeContainers=%s\n' "$(awk 'NF {count++} END {print count + 0}' <<<"$probe_containers")"
+          while IFS= read -r probe_container; do
+            test -n "$probe_container" || continue
             docker inspect \
-              --format 'WebsiteContainer={{.Id}} Status={{.State.Status}} Running={{.State.Running}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
-              "$website_container"
-            docker exec "$website_container" node -e '
+              --format 'ProbeContainer={{.Id}} Status={{.State.Status}} Running={{.State.Running}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+              "$probe_container"
+            docker exec "$probe_container" node -e '
               fetch("http://starsnap-main_api:8080/api/health")
                 .then(async (response) => {
                   const body = await response.text();
@@ -188,7 +188,7 @@ jobs:
                   process.exit(1);
                 });
             '
-          done <<<"$website_containers"
+          done <<<"$probe_containers"
           if docker config inspect "$marker_name" >/dev/null 2>&1; then
             docker config inspect \
               --format 'RollbackMarkerPresent=true PreviousPresent={{index .Spec.Labels "com.starsnap.previous-present"}} PreviousURL={{index .Spec.Labels "com.starsnap.previous-url"}}' \

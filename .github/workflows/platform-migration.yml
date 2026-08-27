@@ -10,6 +10,7 @@ on:
         options:
           - provision
           - diagnose-eat
+          - diagnose-eat-container
           - deploy-erp
           - preflight
           - stage
@@ -41,7 +42,8 @@ jobs:
     if: >-
       github.repository == 'starsnap/starsnap-website' &&
       github.ref == 'refs/heads/main' &&
-      inputs.phase != 'diagnose-eat'
+      inputs.phase != 'diagnose-eat' &&
+      inputs.phase != 'diagnose-eat-container'
     runs-on:
       group: starsnap-production
     environment: production
@@ -420,3 +422,158 @@ jobs:
           if [ -d "$diagnostic_dir" ]; then
             find "$diagnostic_dir" -depth -delete
           fi
+
+  diagnose_eat_container:
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.phase == 'diagnose-eat-container'
+    runs-on:
+      group: starsnap-production
+    environment: production
+    timeout-minutes: 5
+
+    steps:
+      - name: Exercise eAT from the running ERP container network
+        shell: bash
+        env:
+          EAT_API_SERVICE_KEY: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
+        run: |
+          set -euo pipefail
+          diagnostic_dir="$RUNNER_TEMP/eat-container-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          case "$diagnostic_dir" in
+            "$RUNNER_TEMP"/eat-container-*) ;;
+            *) exit 1 ;;
+          esac
+          mkdir -p "$diagnostic_dir"
+          chmod 700 "$diagnostic_dir"
+          key_file="$diagnostic_dir/service-key"
+          cleanup() {
+            if [ -d "$diagnostic_dir" ]; then
+              find "$diagnostic_dir" -depth -delete
+            fi
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          test -n "$EAT_API_SERVICE_KEY"
+          umask 077
+          printf '%s' "$EAT_API_SERVICE_KEY" >"$key_file"
+          unset EAT_API_SERVICE_KEY
+
+          mapfile -t container_ids < <(
+            docker ps \
+              --filter label=com.docker.swarm.service.name=starsnap-erp_web \
+              --format '{{.ID}}'
+          )
+          if [ "${#container_ids[@]}" -ne 1 ]; then
+            printf 'Expected one running ERP task container; found %s.\n' "${#container_ids[@]}" >&2
+            exit 1
+          fi
+
+          docker exec -i "${container_ids[0]}" node -e '
+            const fs = require("node:fs");
+            const endpoint = "https://apis.data.go.kr/B552845/eaTPubServiceN3/eaTBidListN3";
+            const maximumResponseBytes = 2 * 1024 * 1024;
+            const successCodes = new Set(["0", "00", "0000"]);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 20_000);
+            let stage = "key";
+            (async () => {
+              try {
+                const key = decodeURIComponent(fs.readFileSync(0, "utf8").trim());
+                const url = new URL(endpoint);
+                url.searchParams.set("serviceKey", key);
+                url.searchParams.set("pageNo", "1");
+                url.searchParams.set("numOfRows", "20");
+                url.searchParams.set("ancmStsrDt", "20260729");
+                url.searchParams.set("ancmEndDt", "20260827");
+                url.searchParams.set("useOrganNm", "\uad50\uc721\uccad");
+
+                stage = "fetch";
+                const response = await fetch(url, {
+                  headers: { Accept: "application/xml, text/xml;q=0.9" },
+                  redirect: "manual",
+                  referrerPolicy: "no-referrer",
+                  signal: controller.signal,
+                });
+                if (!response.ok) {
+                  await response.body?.cancel();
+                  console.log(JSON.stringify({ ok: false, stage: "http", status: response.status }));
+                  process.exitCode = 1;
+                  return;
+                }
+
+                stage = "body";
+                if (!response.body) throw new Error("Response body is missing.");
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                const chunks = [];
+                let bytes = 0;
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    bytes += value.byteLength;
+                    if (bytes > maximumResponseBytes) {
+                      await reader.cancel();
+                      throw new Error("Response exceeded diagnostic limit.");
+                    }
+                    chunks.push(decoder.decode(value, { stream: true }));
+                  }
+                  chunks.push(decoder.decode());
+                } finally {
+                  reader.releaseLock();
+                }
+
+                stage = "inspect";
+                const xml = chunks.join("");
+                const valueOf = (tag) => xml.match(new RegExp("<" + tag + ">([^<]*)</" + tag + ">"))?.[1] ?? null;
+                const integerValueOf = (tag) => {
+                  const value = valueOf(tag);
+                  return value !== null && /^\d+$/.test(value) ? Number(value) : null;
+                };
+                const resultCode = valueOf("resultCode");
+                const totalCount = integerValueOf("totalCount");
+                const pageNo = integerValueOf("pageNo");
+                const numOfRows = integerValueOf("numOfRows");
+                const itemCount = (xml.match(/<item(?:\s[^>]*)?>/g) ?? []).length;
+                const validBody =
+                  successCodes.has(resultCode) &&
+                  totalCount !== null &&
+                  totalCount > 0 &&
+                  pageNo === Math.max(Math.ceil(totalCount / 20), 1) &&
+                  numOfRows === 20 &&
+                  itemCount === Math.min(20, totalCount);
+                console.log(JSON.stringify({
+                  ok: validBody,
+                  stage: validBody ? "complete" : "inspect",
+                  status: response.status,
+                  bytes,
+                  contentType: response.headers.get("content-type"),
+                  resultCode,
+                  totalCount,
+                  pageNo,
+                  numOfRows,
+                  itemCount,
+                }));
+                if (!validBody) process.exitCode = 1;
+              } catch (error) {
+                const causeCode = typeof error?.cause?.code === "string" && /^[A-Z0-9_]+$/.test(error.cause.code)
+                  ? error.cause.code
+                  : null;
+                console.log(JSON.stringify({
+                  ok: false,
+                  stage,
+                  aborted: controller.signal.aborted,
+                  errorName: error instanceof Error ? error.name : "UnknownError",
+                  causeCode,
+                }));
+                process.exitCode = 1;
+              } finally {
+                clearTimeout(timeout);
+              }
+            })();
+          ' <"$key_file"

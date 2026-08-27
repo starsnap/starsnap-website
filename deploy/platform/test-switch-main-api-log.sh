@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 test_root="$(mktemp -d)"
 export FAKE_LOG_ROUTE_ROOT="$test_root"
+export FAKE_HUB_REPLICAS="1/1"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly old_line="SERVER_LOG_BASE_URL=http://192.168.1.2:8081"
 readonly new_line="SERVER_LOG_BASE_URL=http://starsnap-hub_server:8081"
@@ -46,7 +47,7 @@ docker() {
     service:ls)
       case "$*" in
         *starsnap-main_api*) printf 'starsnap-main_api 1/1\n' ;;
-        *starsnap-hub_server*) printf 'starsnap-hub_server 1/1\n' ;;
+        *starsnap-hub_server*) printf 'starsnap-hub_server %s\n' "$FAKE_HUB_REPLICAS" ;;
       esac
       ;;
     service:update)
@@ -135,10 +136,18 @@ ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
   bash deploy/platform/switch-main-api-log.sh switch >/dev/null
 test "$(cat "$(fake_env_file)")" = "$new_line"
 
+export FAKE_HUB_REPLICAS="0/1"
 ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
   bash deploy/platform/switch-main-api-log.sh restore >/dev/null
 test "$(cat "$(fake_env_file)")" = "$old_line"
 test ! -f "$(fake_marker_file)"
+
+if ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh switch >/dev/null 2>&1; then
+  echo 'Switch should fail while the target Hub is unavailable.' >&2
+  exit 1
+fi
+export FAKE_HUB_REPLICAS="1/1"
 
 printf '%s\n' "$new_line" >"$(fake_env_file)"
 if ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \

@@ -7,9 +7,14 @@ readonly api_service="starsnap-main_api"
 readonly hub_service="starsnap-hub_server"
 readonly new_url="http://starsnap-hub_server:8081"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
+readonly route_timeout_seconds="${STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS:-900}"
 
 if [[ ! "$mode" =~ ^(switch|restore)$ ]]; then
   echo "Usage: $0 switch|restore" >&2
+  exit 2
+fi
+if [[ ! "$route_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+  echo "STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS must be a positive integer." >&2
   exit 2
 fi
 
@@ -24,7 +29,7 @@ wait_for_api() {
   local expected_replicas deadline replicas update_state website_container
   expected_replicas="$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "$api_service")"
   test "$expected_replicas" -ge 1
-  deadline=$((SECONDS + 600))
+  deadline=$((SECONDS + route_timeout_seconds))
   while (( SECONDS < deadline )); do
     replicas="$(docker service ls --filter "name=$api_service" --format '{{.Name}} {{.Replicas}}' | awk -v target="$api_service" '$1 == target {print $2}')"
     update_state="$(docker service inspect --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}completed{{end}}' "$api_service")"
@@ -53,7 +58,9 @@ wait_for_api() {
     fi
     sleep 3
   done
+  echo "Timed out waiting for $api_service after ${route_timeout_seconds}s." >&2
   docker service ps --no-trunc "$api_service" >&2 || true
+  docker service logs --raw --tail 100 "$api_service" >&2 || true
   return 1
 }
 
@@ -73,11 +80,11 @@ apply_route() {
 }
 
 docker service inspect "$api_service" >/dev/null
-test "$(docker service ls --filter "name=$hub_service" --format '{{.Name}} {{.Replicas}}' | awk -v target="$hub_service" '$1 == target {print $2}')" = "1/1"
 
 case "$mode" in
   switch)
     test "${ALLOW_API_LOG_ROUTE:-}" = "SWITCH-MAIN-API-LOG"
+    test "$(docker service ls --filter "name=$hub_service" --format '{{.Name}} {{.Replicas}}' | awk -v target="$hub_service" '$1 == target {print $2}')" = "1/1"
     current_line="$(service_env_line)"
     current_present=false
     current_url=""

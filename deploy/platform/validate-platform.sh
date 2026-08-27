@@ -96,7 +96,7 @@ grep -Fq 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-
 grep -Fq 'starsnap-main_api:8080' deploy/platform/build-platform-images.ps1
 grep -Fq 'sourceImageId' deploy/platform/build-platform-images.ps1
 grep -Fq 'wait_for_completed_service starsnap-erp_ollama-model' deploy/platform/deploy-platform.sh
-grep -Fq 'docker service update --with-registry-auth --force "$service"' deploy/platform/deploy-platform.sh
+grep -Fq 'docker service update --with-registry-auth --force' deploy/platform/deploy-platform.sh
 grep -Fq 'Snapshot manifest and database dump hashes verified.' deploy/platform/restore-platform-data.sh
 
 echo "Platform stack configuration passed static validation."

@@ -73,8 +73,12 @@ for file in "${stack_files[@]}"; do
   docker stack config --compose-file "$file" >/dev/null
 done
 
-node --check deploy/verify-internal.mjs
-node --check deploy/platform/verify-platform.mjs
+if command -v node >/dev/null 2>&1; then
+  node --check deploy/verify-internal.mjs
+  node --check deploy/platform/verify-platform.mjs
+else
+  echo "Node.js is unavailable on the deployment host; CI owns JavaScript syntax validation."
+fi
 
 if grep -Fq '192.168.1.2' \
   deploy/platform/starsnap-sns.yml \

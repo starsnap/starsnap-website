@@ -49,10 +49,10 @@ readonly private_image_services=(
 readonly manager_local_image_registry='starsnap.invalid'
 
 usage() {
-  echo "Usage: $0 preflight|stage|activate|verify|stop-target" >&2
+  echo "Usage: $0 preflight|stage|activate|diagnose|verify|stop-target" >&2
 }
 
-if [[ ! "$phase" =~ ^(preflight|stage|activate|verify|stop-target)$ ]]; then
+if [[ ! "$phase" =~ ^(preflight|stage|activate|diagnose|verify|stop-target)$ ]]; then
   usage
   exit 2
 fi
@@ -279,6 +279,19 @@ verify_direct_services() {
     node --input-type=module <deploy/platform/verify-platform.mjs
 }
 
+diagnose_hub_services() {
+  local service
+  for service in starsnap-hub_postgres starsnap-hub_server; do
+    echo "::group::$service state"
+    docker service inspect --format \
+      'Image={{.Spec.TaskTemplate.ContainerSpec.Image}} Update={{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}none{{end}} Replicas={{.Spec.Mode.Replicated.Replicas}}' \
+      "$service" || true
+    docker service ps --no-trunc "$service" || true
+    docker service logs --raw --timestamps --tail 200 "$service" || true
+    echo '::endgroup::'
+  done
+}
+
 require_restored_data_marker() {
   local expected_sha="${PLATFORM_DATA_SHA256:-}"
   local marker_name marker_sha
@@ -333,6 +346,9 @@ case "$phase" in
     verify_private_service_runtime
     verify_direct_services
     echo "Target services are healthy; Caddy has not been switched by this script."
+    ;;
+  diagnose)
+    diagnose_hub_services
     ;;
   verify)
     verify_direct_services

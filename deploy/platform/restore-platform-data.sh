@@ -106,6 +106,7 @@ docker volume create \
 # shellcheck disable=SC2016
 run_completed_service "$download_service" \
   --network "$app_network" \
+  --user 0:0 \
   --mount "type=volume,source=$transfer_volume,target=/transfer" \
   --secret "source=$PLATFORM_TRANSFER_TOKEN_SECRET_NAME,target=transfer-token,mode=0400" \
   --env "SOURCE_URL=$source_url" \

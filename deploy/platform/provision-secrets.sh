@@ -41,11 +41,52 @@ service_env_value() {
   env_rows="$(docker service inspect \
     --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' \
     "$service_name")"
-  matches="$(awk -v prefix="$env_name=" \
+  if matches="$(awk -v prefix="$env_name=" \
     'index($0, prefix) == 1 {print substr($0, length(prefix) + 1); count++} END {if (count != 1) exit 2}' \
-    <<<"$env_rows")" || return 1
-  [[ -n "$matches" ]] || return 1
-  printf '%s' "$matches"
+    <<<"$env_rows")" && [[ -n "$matches" ]]; then
+    printf '%s' "$matches"
+    return 0
+  fi
+  service_task_env_value "$service_name" "$env_name"
+}
+
+container_env_value() {
+  local container_id="$1"
+  local env_name="$2"
+  docker exec "$container_id" sh -ceu '
+    env_name="$1"
+    if secret_value="$(printenv "$env_name" 2>/dev/null)" && [ -n "$secret_value" ]; then
+      printf "%s" "$secret_value"
+      exit 0
+    fi
+    secret_file="$(printenv "${env_name}_FILE" 2>/dev/null || true)"
+    [ -n "$secret_file" ] && [ -r "$secret_file" ] || exit 1
+    secret_value="$(cat "$secret_file")"
+    [ -n "$secret_value" ] || exit 1
+    printf "%s" "$secret_value"
+  ' sh "$env_name"
+}
+
+service_task_env_value() {
+  local service_name="$1"
+  local env_name="$2"
+  local container_rows container_id candidate resolved_value="" found=0
+  container_rows="$(docker ps \
+    --filter "label=com.docker.swarm.service.name=$service_name" \
+    --format '{{.ID}}')" || return 1
+  while IFS= read -r container_id; do
+    [[ -n "$container_id" ]] || continue
+    if candidate="$(container_env_value "$container_id" "$env_name" 2>/dev/null)" \
+      && [[ -n "$candidate" ]]; then
+      if (( found == 1 )) && [[ "$candidate" != "$resolved_value" ]]; then
+        return 1
+      fi
+      resolved_value="$candidate"
+      found=1
+    fi
+  done <<<"$container_rows"
+  (( found == 1 )) || return 1
+  printf '%s' "$resolved_value"
 }
 
 ensure_service_or_provided_secret() {

@@ -27,15 +27,26 @@ docker() {
       case "$*" in
         *ContainerSpec.Env*starsnap-main_api)
           printf '%s\n' \
-            'SPRING_DATASOURCE_PASSWORD=derived-main-db' \
             'AWS_ACCESS_KEY_ID=derived-aws-id' \
             'AWS_SECRET_ACCESS_KEY=derived-aws-secret' \
             'HUB_SERVER_LOG_SECRET=derived-hub-ingest'
           ;;
         *ContainerSpec.Env*starsnap-main_starsnap-postgres)
-          printf '%s\n' 'POSTGRES_PASSWORD=derived-main-db-fallback'
+          printf '%s\n' 'POSTGRES_PASSWORD_FILE=/run/secrets/main-db'
           ;;
       esac
+      ;;
+    ps:--filter)
+      case "$*" in
+        *starsnap-main_api*) printf '%s\n' 'api-container' ;;
+        *starsnap-main_starsnap-postgres*) printf '%s\n' 'db-container' ;;
+      esac
+      ;;
+    exec:api-container)
+      return 1
+      ;;
+    exec:db-container)
+      printf '%s' 'derived-main-db'
       ;;
     run:--rm)
       byte_count="${*: -1}"

@@ -219,8 +219,13 @@ test "$(cat "$(fake_env_file)")" = "$old_line"
 test -f "$(fake_marker_file)"
 rm "$FAKE_LOG_ROUTE_ROOT/fail-target-health"
 export FAKE_API_UPDATE_STATE="completed"
+ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh switch >/dev/null
+test "$(cat "$(fake_env_file)")" = "$new_line"
+test -f "$(fake_marker_file)"
 ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
   bash deploy/platform/switch-main-api-log.sh restore >/dev/null
+test "$(cat "$(fake_env_file)")" = "$old_line"
 test ! -f "$(fake_marker_file)"
 
 printf '%s\n' "$new_line" >"$(fake_env_file)"

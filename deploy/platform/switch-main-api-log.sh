@@ -148,6 +148,7 @@ case "$mode" in
     fi
     if [[ "$current_present" == "true" && "$current_url" == "$new_url" ]]; then
       if docker config inspect "$marker_name" >/dev/null 2>&1; then
+        wait_for_api true "$new_url" true
         echo "SNS API log destination already uses the target Hub and rollback state is present."
         exit 0
       fi
@@ -155,8 +156,23 @@ case "$mode" in
       exit 1
     fi
     if docker config inspect "$marker_name" >/dev/null 2>&1; then
-      echo "Previous-route marker already exists; refusing to overwrite rollback state." >&2
-      exit 1
+      previous_present="$(docker config inspect --format '{{index .Spec.Labels "com.starsnap.previous-present"}}' "$marker_name")"
+      previous_url="$(docker config inspect --format '{{index .Spec.Labels "com.starsnap.previous-url"}}' "$marker_name")"
+      test "$previous_present" = "true" || test "$previous_present" = "false"
+      previous_line=""
+      if [[ "$previous_present" == "true" ]]; then
+        previous_line="SERVER_LOG_BASE_URL=$previous_url"
+      fi
+      if [[ "$current_line" != "$previous_line" ]]; then
+        echo "Previous-route marker exists but the service specification does not match it; refusing to overwrite rollback state." >&2
+        exit 1
+      fi
+      if ! wait_for_api "$previous_present" "$previous_url" false; then
+        echo "Previous-route marker exists but the restored runtime is not terminal and healthy; preserving rollback state." >&2
+        exit 1
+      fi
+      docker config rm "$marker_name" >/dev/null
+      echo "Removed a completed stale rollback marker before retrying the switch."
     fi
     printf 'previous_present=%s\nprevious_url=%s\n' "$current_present" "$current_url" \
       | docker config create \

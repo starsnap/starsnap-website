@@ -8,6 +8,7 @@ readonly hub_service="starsnap-hub_server"
 readonly new_url="http://starsnap-hub_server:8081"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly route_timeout_seconds="${STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS:-900}"
+readonly stable_observations_required="${STARSNAP_API_LOG_ROUTE_STABLE_OBSERVATIONS:-20}"
 
 if [[ ! "$mode" =~ ^(switch|restore)$ ]]; then
   echo "Usage: $0 switch|restore" >&2
@@ -15,6 +16,10 @@ if [[ ! "$mode" =~ ^(switch|restore)$ ]]; then
 fi
 if [[ ! "$route_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   echo "STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS must be a positive integer." >&2
+  exit 2
+fi
+if [[ ! "$stable_observations_required" =~ ^[1-9][0-9]*$ ]]; then
+  echo "STARSNAP_API_LOG_ROUTE_STABLE_OBSERVATIONS must be a positive integer." >&2
   exit 2
 fi
 
@@ -25,8 +30,34 @@ service_env_line() {
     | awk -F= '$1 == "SERVER_LOG_BASE_URL" {print; count++} END {if (count > 1) exit 2}'
 }
 
+running_service_container_id() {
+  local service="$1"
+  docker ps \
+    --filter "label=com.docker.swarm.service.name=$service" \
+    --filter status=running \
+    --format '{{.ID}}' \
+    | awk 'NF {id=$0; count++} END {if (count == 1) print id; else exit 1}'
+}
+
+container_env_line() {
+  local container_id="$1"
+  docker inspect \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    "$container_id" \
+    | awk -F= '$1 == "SERVER_LOG_BASE_URL" {print; count++} END {if (count > 1) exit 2}'
+}
+
 wait_for_api() {
-  local expected_replicas deadline replicas update_state website_container
+  local expected_present="$1"
+  local expected_url="$2"
+  local allow_extended_monitoring="$3"
+  local expected_line=""
+  local expected_replicas deadline replicas update_state website_container api_container running_line
+  local running_env_valid
+  local stable_observations=0
+  if [[ "$expected_present" == "true" ]]; then
+    expected_line="SERVER_LOG_BASE_URL=$expected_url"
+  fi
   expected_replicas="$(docker service inspect --format '{{.Spec.Mode.Replicated.Replicas}}' "$api_service")"
   test "$expected_replicas" -ge 1
   deadline=$((SECONDS + route_timeout_seconds))
@@ -39,12 +70,19 @@ wait_for_api() {
         return 1
         ;;
     esac
-    if [[ "$replicas" == "$expected_replicas/$expected_replicas" && "$update_state" == "completed" ]]; then
-      website_container="$(docker ps \
-        --filter label=com.docker.swarm.service.name=starsnap-company_website \
-        --filter status=running \
-        --format '{{.ID}}')"
-      if [[ "$(awk 'NF {count++} END {print count + 0}' <<<"$website_container")" -eq 1 ]] \
+    if [[ "$replicas" == "$expected_replicas/$expected_replicas" ]]; then
+      api_container="$(running_service_container_id "$api_service" 2>/dev/null || true)"
+      website_container="$(running_service_container_id starsnap-company_website 2>/dev/null || true)"
+      running_line=""
+      running_env_valid=false
+      if [[ -n "$api_container" ]]; then
+        if running_line="$(container_env_line "$api_container" 2>/dev/null)"; then
+          running_env_valid=true
+        fi
+      fi
+      if [[ -n "$website_container" \
+        && "$running_env_valid" == "true" \
+        && "$running_line" == "$expected_line" ]] \
         && docker exec "$website_container" node -e '
           fetch("http://starsnap-main_api:8080/api/health")
             .then(async (response) => {
@@ -53,8 +91,23 @@ wait_for_api() {
             })
             .catch(() => process.exit(1));
         '; then
-        return 0
+        if [[ "$update_state" == "completed" ]]; then
+          return 0
+        fi
+        if [[ "$allow_extended_monitoring" == "true" && "$update_state" == "updating" ]]; then
+          stable_observations=$((stable_observations + 1))
+          if (( stable_observations >= stable_observations_required )); then
+            echo "$api_service is healthy with the expected log route while Swarm continues its extended update monitor."
+            return 0
+          fi
+        else
+          stable_observations=0
+        fi
+      else
+        stable_observations=0
       fi
+    else
+      stable_observations=0
     fi
     sleep 3
   done
@@ -67,6 +120,7 @@ wait_for_api() {
 apply_route() {
   local target_present="$1"
   local target_url="$2"
+  local allow_extended_monitoring="${3:-false}"
   local current_line update_args=(--detach)
   current_line="$(service_env_line)"
   if [[ -n "$current_line" ]]; then
@@ -76,7 +130,7 @@ apply_route() {
     update_args+=(--env-add "SERVER_LOG_BASE_URL=$target_url")
   fi
   docker service update "${update_args[@]}" "$api_service" >/dev/null
-  wait_for_api
+  wait_for_api "$target_present" "$target_url" "$allow_extended_monitoring"
 }
 
 docker service inspect "$api_service" >/dev/null
@@ -109,10 +163,13 @@ case "$mode" in
         --label "com.starsnap.previous-present=$current_present" \
         --label "com.starsnap.previous-url=$current_url" \
         "$marker_name" - >/dev/null
-    if ! apply_route true "$new_url"; then
-      apply_route "$current_present" "$current_url" || true
-      docker config rm "$marker_name" >/dev/null 2>&1 || true
-      echo "SNS API log destination switch failed and rollback was requested." >&2
+    if ! apply_route true "$new_url" true; then
+      if apply_route "$current_present" "$current_url"; then
+        docker config rm "$marker_name" >/dev/null
+        echo "SNS API log destination switch failed and rollback completed." >&2
+      else
+        echo "SNS API log destination switch and rollback verification failed; rollback state was preserved." >&2
+      fi
       exit 1
     fi
     echo "SNS API log destination now uses starsnap-hub_server over the Swarm overlay."

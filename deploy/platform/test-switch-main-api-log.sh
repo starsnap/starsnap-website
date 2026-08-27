@@ -5,6 +5,7 @@ set -Eeuo pipefail
 test_root="$(mktemp -d)"
 export FAKE_LOG_ROUTE_ROOT="$test_root"
 export FAKE_HUB_REPLICAS="1/1"
+export FAKE_API_UPDATE_STATE="completed"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly old_line="SERVER_LOG_BASE_URL=http://192.168.1.2:8081"
 readonly new_line="SERVER_LOG_BASE_URL=http://starsnap-hub_server:8081"
@@ -41,7 +42,7 @@ docker() {
           fi
           ;;
         *Replicated.Replicas*) printf '1\n' ;;
-        *UpdateStatus*) printf 'completed\n' ;;
+        *UpdateStatus*) printf '%s\n' "$FAKE_API_UPDATE_STATE" ;;
       esac
       ;;
     service:ls)
@@ -105,7 +106,25 @@ docker() {
         -delete
       ;;
     ps:*)
-      printf 'website-container\n'
+      if [[ "$*" == *"com.docker.swarm.service.name=starsnap-main_api"* ]]; then
+        printf 'api-container\n'
+      elif [[ "$*" == *"com.docker.swarm.service.name=starsnap-company_website"* ]]; then
+        printf 'website-container\n'
+      else
+        return 1
+      fi
+      ;;
+    inspect:*)
+      target="${*: -1}"
+      if [[ "$target" != "api-container" ]]; then
+        return 1
+      fi
+      if [[ -f "$FAKE_LOG_ROUTE_ROOT/fail-api-inspect" ]]; then
+        return 1
+      fi
+      if [[ -s "$(fake_env_file)" ]]; then
+        cat "$(fake_env_file)"
+      fi
       ;;
     exec:*)
       if [[ -f "$FAKE_LOG_ROUTE_ROOT/fail-target-health" ]] \
@@ -148,6 +167,61 @@ if ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
   exit 1
 fi
 export FAKE_HUB_REPLICAS="1/1"
+
+export FAKE_API_UPDATE_STATE="updating"
+STARSNAP_API_LOG_ROUTE_STABLE_OBSERVATIONS=2 \
+ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh switch >/dev/null
+test "$(cat "$(fake_env_file)")" = "$new_line"
+test -f "$(fake_marker_file)"
+if STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS=1 \
+  ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh restore >/dev/null 2>&1; then
+  echo 'Restore should not finish while the Swarm update is nonterminal.' >&2
+  exit 1
+fi
+test -f "$(fake_marker_file)"
+export FAKE_API_UPDATE_STATE="completed"
+ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh restore >/dev/null
+test "$(cat "$(fake_env_file)")" = "$old_line"
+test ! -f "$(fake_marker_file)"
+
+: >"$(fake_env_file)"
+ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh switch >/dev/null
+test "$(cat "$(fake_env_file)")" = "$new_line"
+test -f "$(fake_marker_file)"
+touch "$FAKE_LOG_ROUTE_ROOT/fail-api-inspect"
+if STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS=1 \
+  ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh restore >/dev/null 2>&1; then
+  echo 'Restore should fail when the running API container cannot be inspected.' >&2
+  exit 1
+fi
+test -f "$(fake_marker_file)"
+rm "$FAKE_LOG_ROUTE_ROOT/fail-api-inspect"
+ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh restore >/dev/null
+test ! -s "$(fake_env_file)"
+test ! -f "$(fake_marker_file)"
+
+printf '%s\n' "$old_line" >"$(fake_env_file)"
+touch "$FAKE_LOG_ROUTE_ROOT/fail-target-health"
+export FAKE_API_UPDATE_STATE="updating"
+if STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS=1 \
+  ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh switch >/dev/null 2>&1; then
+  echo 'Switch should fail when both target verification and rollback completion fail.' >&2
+  exit 1
+fi
+test "$(cat "$(fake_env_file)")" = "$old_line"
+test -f "$(fake_marker_file)"
+rm "$FAKE_LOG_ROUTE_ROOT/fail-target-health"
+export FAKE_API_UPDATE_STATE="completed"
+ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \
+  bash deploy/platform/switch-main-api-log.sh restore >/dev/null
+test ! -f "$(fake_marker_file)"
 
 printf '%s\n' "$new_line" >"$(fake_env_file)"
 if ALLOW_API_LOG_ROUTE=RESTORE-MAIN-API-LOG \

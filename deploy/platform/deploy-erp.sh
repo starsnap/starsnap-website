@@ -11,6 +11,7 @@ readonly manager_local_image_registry='starsnap.invalid'
 readonly backup_volume="${ERP_BACKUP_VOLUME_NAME:-starsnap-erp-backups-v1}"
 
 previous_image=''
+previous_task_template_hash=''
 service_updated=0
 
 single_running_container() {
@@ -55,17 +56,64 @@ wait_for_web() {
   return 1
 }
 
+service_task_template_hash() {
+  docker service inspect \
+    --format '{{json .Spec.TaskTemplate}}' \
+    "$web_service" \
+    | sha256sum \
+    | awk '{print $1}'
+}
+
 rollback_on_error() {
-  local status=$? current_image
+  local status=$? current_hash='' restored_hash='' restored_image=''
+  local restored_container='' restored_running_image=''
+  local rollback_ok=1
   trap - ERR
   if (( service_updated == 1 )); then
-    current_image="$(docker service inspect \
-      --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
-      "$web_service" 2>/dev/null || true)"
-    if [[ -n "$previous_image" && "$current_image" != "$previous_image" ]]; then
+    if ! current_hash="$(service_task_template_hash 2>/dev/null)"; then
+      echo "Could not inspect $web_service while preparing rollback." >&2
+      rollback_ok=0
+    elif [[ "$current_hash" != "$previous_task_template_hash" ]]; then
       echo "ERP verification failed; rolling $web_service back to its previous specification." >&2
-      docker service rollback --detach=true "$web_service" >/dev/null 2>&1 || true
-      wait_for_web || true
+      if ! docker service rollback --detach=true "$web_service" >/dev/null; then
+        echo "Rollback command failed for $web_service." >&2
+        rollback_ok=0
+      elif ! wait_for_web; then
+        echo "Rollback did not converge for $web_service." >&2
+        rollback_ok=0
+      fi
+    else
+      echo "$web_service already matches its pre-deploy task specification." >&2
+    fi
+
+    if ! restored_hash="$(service_task_template_hash 2>/dev/null)"; then
+      rollback_ok=0
+    elif [[ "$restored_hash" != "$previous_task_template_hash" ]]; then
+      echo "$web_service task specification was not restored." >&2
+      rollback_ok=0
+    fi
+    if ! restored_image="$(docker service inspect \
+      --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
+      "$web_service" 2>/dev/null)"; then
+      rollback_ok=0
+    elif [[ "$restored_image" != "$previous_image" ]]; then
+      echo "$web_service image was not restored to $previous_image." >&2
+      rollback_ok=0
+    fi
+    if ! restored_container="$(single_running_container "$web_service" 2>/dev/null)"; then
+      rollback_ok=0
+    elif ! restored_running_image="$(docker inspect \
+      --format '{{.Config.Image}}' \
+      "$restored_container" 2>/dev/null)"; then
+      rollback_ok=0
+    elif [[ "$restored_running_image" != "$previous_image" ]]; then
+      echo "$web_service running container does not use the restored image." >&2
+      rollback_ok=0
+    fi
+    if (( rollback_ok == 1 )); then
+      echo "ERP rollback verified: image=$previous_image replicas=1/1" >&2
+    else
+      echo "CRITICAL: ERP rollback could not be fully verified; inspect $web_service immediately." >&2
     fi
   fi
   exit "$status"
@@ -162,6 +210,9 @@ previous_image="$(docker service inspect \
   --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
   "$web_service")"
 readonly previous_image
+previous_task_template_hash="$(service_task_template_hash)"
+readonly previous_task_template_hash
+[[ "$previous_task_template_hash" =~ ^[0-9a-f]{64}$ ]]
 local_image="$(manager_local_image_reference)"
 readonly local_image
 docker tag "$ERP_WEB_IMAGE" "$local_image"

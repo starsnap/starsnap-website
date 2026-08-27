@@ -84,13 +84,14 @@ start_date="$(date -u -d '89 days ago' +%Y-%m-%d)"
 smoke_page=1
 readonly start_date end_date smoke_page
 
-# Refresh only this deterministic smoke-query cache entry so the first request
-# proves a real upstream call and the second proves the DB cache path. The
-# canonical row is immediately recreated by the first request.
+# Expire only this deterministic smoke-query cache entry so the first request
+# proves a real upstream refresh and the second proves the DB cache path. Keep
+# the stale row and its children available as a fallback if eAT is unavailable.
 docker exec "$postgres_container" \
   psql --username mealops --dbname mealops --no-psqlrc --quiet --set ON_ERROR_STOP=1 \
   --command "
-    DELETE FROM eat_bid_query_cache
+    UPDATE eat_bid_query_cache
+    SET expires_at = fetched_at + interval '1 microsecond'
     WHERE normalized_filters ->> 'useOrganizationName' = '서울특별시교육청'
       AND normalized_filters ->> 'demandOrganizationName' = ''
       AND normalized_filters ->> 'bidName' = ''

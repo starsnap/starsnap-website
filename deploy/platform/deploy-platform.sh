@@ -134,7 +134,7 @@ refresh_private_image_tasks() {
 
   for service in "${services[@]}"; do
     echo "Refreshing the authenticated private-image task for $service."
-    if ! docker service update --with-registry-auth --force "$service" >/dev/null; then
+    if ! docker service update --detach=true --with-registry-auth --force "$service" >/dev/null; then
       echo "Failed to refresh $service; reporting task state and recent logs." >&2
       docker service ps --no-trunc "$service" >&2 || true
       docker service logs --raw --tail 100 "$service" >&2 || true

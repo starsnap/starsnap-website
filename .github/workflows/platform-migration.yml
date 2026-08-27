@@ -714,3 +714,144 @@ jobs:
               }
             })();
           '
+
+          if docker exec "${container_ids[0]}" test -r /etc/ssl/certs/ca-certificates.crt; then
+            echo '{"runtime":"container","caBundleReadable":true}'
+          else
+            echo '{"runtime":"container","caBundleReadable":false}'
+          fi
+
+          printf '%s' "$service_key" | docker exec -i "${container_ids[0]}" node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+
+            const key = readFileSync(0, "utf8").trim();
+            const workerSource = String.raw`
+              const endpoint = "https://apis.data.go.kr/B552845/eaTPubServiceN3/eaTBidListN3";
+              const maximumResponseBytes = 2 * 1024 * 1024;
+              const successCodes = new Set(["0", "00", "0000"]);
+
+              export default {
+                async fetch(_request, env) {
+                  const controller = new AbortController();
+                  const timeout = setTimeout(() => controller.abort(), 20_000);
+                  let stage = "key";
+                  try {
+                    const decodedKey = decodeURIComponent(env.EAT_API_SERVICE_KEY.trim());
+                    const url = new URL(endpoint);
+                    url.searchParams.set("serviceKey", decodedKey);
+                    url.searchParams.set("pageNo", "1");
+                    url.searchParams.set("numOfRows", "20");
+                    url.searchParams.set("ancmStsrDt", "20260729");
+                    url.searchParams.set("ancmEndDt", "20260827");
+                    url.searchParams.set("useOrganNm", "\uad50\uc721\uccad");
+
+                    stage = "fetch";
+                    const response = await fetch(url, {
+                      headers: { Accept: "application/xml, text/xml;q=0.9" },
+                      redirect: "manual",
+                      referrerPolicy: "no-referrer",
+                      signal: controller.signal,
+                    });
+                    if (!response.ok) {
+                      await response.body?.cancel();
+                      return Response.json({ ok: false, stage: "http", status: response.status }, { status: 502 });
+                    }
+
+                    stage = "body";
+                    if (!response.body) throw new Error("Response body is missing.");
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    const chunks = [];
+                    let bytes = 0;
+                    try {
+                      while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        bytes += value.byteLength;
+                        if (bytes > maximumResponseBytes) {
+                          await reader.cancel();
+                          throw new Error("Response exceeded diagnostic limit.");
+                        }
+                        chunks.push(decoder.decode(value, { stream: true }));
+                      }
+                      chunks.push(decoder.decode());
+                    } finally {
+                      reader.releaseLock();
+                    }
+
+                    stage = "inspect";
+                    const xml = chunks.join("");
+                    const valueOf = (tag) => xml.match(new RegExp("<" + tag + ">([^<]*)</" + tag + ">"))?.[1] ?? null;
+                    const integerValueOf = (tag) => {
+                      const value = valueOf(tag);
+                      return value !== null && /^\d+$/.test(value) ? Number(value) : null;
+                    };
+                    const resultCode = valueOf("resultCode");
+                    const totalCount = integerValueOf("totalCount");
+                    const pageNo = integerValueOf("pageNo");
+                    const numOfRows = integerValueOf("numOfRows");
+                    const itemCount = (xml.match(/<item(?:\s[^>]*)?>/g) ?? []).length;
+                    const validBody =
+                      successCodes.has(resultCode) &&
+                      totalCount !== null &&
+                      totalCount > 0 &&
+                      pageNo === Math.max(Math.ceil(totalCount / 20), 1) &&
+                      numOfRows === 20 &&
+                      itemCount === Math.min(20, totalCount);
+                    return Response.json({
+                      ok: validBody,
+                      stage: validBody ? "complete" : "inspect",
+                      status: response.status,
+                      bytes,
+                      resultCode,
+                      totalCount,
+                      pageNo,
+                      numOfRows,
+                      itemCount,
+                    }, { status: validBody ? 200 : 502 });
+                  } catch (error) {
+                    return Response.json({
+                      ok: false,
+                      stage,
+                      aborted: controller.signal.aborted,
+                      errorName: error instanceof Error ? error.name : "UnknownError",
+                    }, { status: 500 });
+                  } finally {
+                    clearTimeout(timeout);
+                  }
+                },
+              };
+            `;
+
+            let miniflare;
+            try {
+              const { Miniflare } = await import(
+                "file:///usr/local/lib/node_modules/wrangler/node_modules/miniflare/dist/src/index.js"
+              );
+              miniflare = new Miniflare({
+                bindings: { EAT_API_SERVICE_KEY: key },
+                compatibilityDate: "2026-05-22",
+                compatibilityFlags: ["nodejs_compat"],
+                modules: true,
+                script: workerSource,
+              });
+              const response = await miniflare.dispatchFetch("http://diagnostic.local/");
+              const result = await response.json();
+              console.log(JSON.stringify({ runtime: "workerd", ...result }));
+              if (!response.ok || !result.ok || result.stage !== "complete") process.exitCode = 1;
+            } catch (error) {
+              const causeCode = typeof error?.cause?.code === "string" && /^[A-Z0-9_]+$/.test(error.cause.code)
+                ? error.cause.code
+                : null;
+              console.log(JSON.stringify({
+                runtime: "workerd",
+                ok: false,
+                stage: "runtime",
+                errorName: error instanceof Error ? error.name : "UnknownError",
+                causeCode,
+              }));
+              process.exitCode = 1;
+            } finally {
+              await miniflare?.dispose();
+            }
+          '

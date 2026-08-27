@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 45
 
     env:
+      DOCKER_CONFIG: /tmp/starsnap-platform-docker-${{ github.run_id }}-${{ github.run_attempt }}
       SNS_WEB_IMAGE: ${{ vars.PLATFORM_SNS_WEB_IMAGE }}
       ADMIN_WEB_IMAGE: ${{ vars.PLATFORM_ADMIN_WEB_IMAGE }}
       ADMIN_SERVER_IMAGE: ${{ vars.PLATFORM_ADMIN_SERVER_IMAGE }}
@@ -83,20 +84,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
           node_address="$(docker node inspect self --format '{{.Status.Addr}}')"
           if [ "$node_address" != "192.168.1.103" ]; then
             echo "Expected Swarm manager address 192.168.1.103, got $node_address" >&2
             exit 1
           fi
-
-      - name: Sign in to GHCR
-        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' }}
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Provision versioned Swarm secrets
         if: ${{ inputs.phase == 'provision' }}
@@ -157,3 +152,14 @@ jobs:
         env:
           ALLOW_TRANSFER_CLEANUP: ${{ inputs.confirmation }}
         run: bash deploy/platform/cleanup-server-transfer.sh
+
+      - name: Remove temporary Docker client state
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="/tmp/starsnap-platform-docker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test "$DOCKER_CONFIG" = "$expected"
+          if [ -d "$DOCKER_CONFIG" ]; then
+            find "$DOCKER_CONFIG" -depth -delete
+          fi

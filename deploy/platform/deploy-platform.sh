@@ -79,6 +79,7 @@ verify_images_on_manager() {
   local variable image architecture
   for variable in "${image_variables[@]}"; do
     image="${!variable}"
+    echo "Verifying $variable image on the Swarm manager."
     docker pull "$image" >/dev/null
     architecture="$(docker image inspect --format '{{.Architecture}}' "$image")"
     case "$architecture" in

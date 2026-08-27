@@ -12,7 +12,10 @@ readonly backup_volume="${ERP_BACKUP_VOLUME_NAME:-starsnap-erp-backups-v1}"
 
 previous_image=''
 previous_task_template_hash=''
+previous_update_failure_action=''
+previous_service_healthy=0
 service_updated=0
+local_image=''
 
 single_running_container() {
   local service="$1" container_ids
@@ -27,8 +30,50 @@ single_running_container() {
   awk 'NF {print; exit}' <<<"$container_ids"
 }
 
+web_core_health_ok() {
+  local replicas update_state container health
+  replicas="$(docker service ls \
+    --filter "name=$web_service" \
+    --format '{{.Name}} {{.Replicas}}' \
+    | awk -v target="$web_service" '$1 == target {print $2}')" || return 1
+  test "$replicas" = '1/1' || return 1
+  update_state="$(docker service inspect \
+    --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}completed{{end}}' \
+    "$web_service" 2>/dev/null)" || return 1
+  [[ "$update_state" =~ ^(completed|rollback_completed)$ ]] || return 1
+  container="$(single_running_container "$web_service" 2>/dev/null)" || return 1
+  health="$(docker inspect \
+    --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+    "$container" 2>/dev/null)" || return 1
+  test "$health" = 'healthy' || return 1
+  docker exec "$container" node -e '
+    fetch("http://127.0.0.1:3000/api/health", { headers: { host: "erp.starsnap.kr" } })
+      .then(async (response) => ({ response, body: await response.json() }))
+      .then(({ response, body }) => {
+        if (!response.ok || body?.ok !== true) process.exit(1);
+      })
+      .catch(() => process.exit(1));
+  ' >/dev/null 2>&1
+}
+
+candidate_web_core_health_ok() {
+  local service_image container running_image_id candidate_image_id
+  test -n "$local_image" || return 1
+  service_image="$(docker service inspect \
+    --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
+    "$web_service" 2>/dev/null)" || return 1
+  test "$service_image" = "$local_image" || return 1
+  container="$(single_running_container "$web_service" 2>/dev/null)" || return 1
+  running_image_id="$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null)" || return 1
+  candidate_image_id="$(docker image inspect --format '{{.Id}}' "$local_image" 2>/dev/null)" || return 1
+  test "$running_image_id" = "$candidate_image_id" || return 1
+  web_core_health_ok
+}
+
 wait_for_web() {
+  local expected_state="${1:-completed}"
   local deadline=$((SECONDS + 600)) replicas update_state
+  [[ "$expected_state" =~ ^(completed|rollback_completed)$ ]]
   while (( SECONDS < deadline )); do
     replicas="$(docker service ls \
       --filter "name=$web_service" \
@@ -44,8 +89,15 @@ wait_for_web() {
         docker service logs --raw --tail 100 "$web_service" >&2 || true
         return 1
         ;;
+      rollback_completed)
+        if [[ "$expected_state" != 'rollback_completed' ]]; then
+          echo "$web_service rolled back instead of completing the candidate deployment." >&2
+          docker service ps --no-trunc "$web_service" >&2 || true
+          return 1
+        fi
+        ;;
     esac
-    if [[ "$replicas" == '1/1' && "$update_state" =~ ^(completed|rollback_completed)$ ]]; then
+    if [[ "$replicas" == '1/1' && "$update_state" == "$expected_state" ]]; then
       return 0
     fi
     sleep 3
@@ -70,6 +122,15 @@ rollback_on_error() {
   local rollback_ok=1
   trap - ERR
   if (( service_updated == 1 )); then
+    if (( previous_service_healthy == 0 )); then
+      echo "The pre-deploy ERP service was not healthy; refusing to roll back to its unavailable specification." >&2
+      if candidate_web_core_health_ok; then
+        echo "The candidate ERP image is running and core-healthy; it will remain online for incident recovery." >&2
+      else
+        echo "CRITICAL: no healthy pre-deploy ERP target exists and the candidate image is absent or not core-healthy; inspect $web_service immediately." >&2
+      fi
+      exit "$status"
+    fi
     if ! current_hash="$(service_task_template_hash 2>/dev/null)"; then
       echo "Could not inspect $web_service while preparing rollback." >&2
       rollback_ok=0
@@ -78,7 +139,7 @@ rollback_on_error() {
       if ! docker service rollback --detach=true "$web_service" >/dev/null; then
         echo "Rollback command failed for $web_service." >&2
         rollback_ok=0
-      elif ! wait_for_web; then
+      elif ! wait_for_web rollback_completed; then
         echo "Rollback did not converge for $web_service." >&2
         rollback_ok=0
       fi
@@ -213,6 +274,15 @@ readonly previous_image
 previous_task_template_hash="$(service_task_template_hash)"
 readonly previous_task_template_hash
 [[ "$previous_task_template_hash" =~ ^[0-9a-f]{64}$ ]]
+previous_update_failure_action="$(docker service inspect \
+  --format '{{if .Spec.UpdateConfig}}{{.Spec.UpdateConfig.FailureAction}}{{else}}pause{{end}}' \
+  "$web_service")"
+readonly previous_update_failure_action
+[[ "$previous_update_failure_action" =~ ^(continue|pause|rollback)$ ]]
+if web_core_health_ok; then
+  previous_service_healthy=1
+fi
+readonly previous_service_healthy
 local_image="$(manager_local_image_reference)"
 readonly local_image
 docker tag "$ERP_WEB_IMAGE" "$local_image"
@@ -240,6 +310,12 @@ else
   )
 fi
 
+update_failure_args=()
+if (( previous_service_healthy == 0 )); then
+  update_failure_args+=(--update-failure-action pause)
+fi
+readonly update_failure_args
+
 docker service update \
   --detach=true \
   --no-resolve-image \
@@ -247,6 +323,7 @@ docker service update \
   --env-add 'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' \
   --env-add 'EAT_CACHE_TTL_MINUTES=360' \
   "${secret_update[@]}" \
+  "${update_failure_args[@]}" \
   --force \
   "$web_service" >/dev/null
 service_updated=1
@@ -271,6 +348,17 @@ web_container="$(single_running_container "$web_service")"
 test "$(docker inspect --format '{{.Image}}' "$web_container")" \
   = "$(docker image inspect --format '{{.Id}}' "$ERP_WEB_IMAGE")"
 bash deploy/platform/verify-erp-eat.sh
+
+if (( previous_service_healthy == 0 )) \
+  && [[ "$previous_update_failure_action" != 'pause' ]]; then
+  docker service update \
+    --detach=true \
+    --update-failure-action "$previous_update_failure_action" \
+    "$web_service" >/dev/null
+  test "$(docker service inspect \
+    --format '{{.Spec.UpdateConfig.FailureAction}}' \
+    "$web_service")" = "$previous_update_failure_action"
+fi
 
 trap - ERR
 printf 'ERP-only deployment verified: image=%s\n' "$ERP_WEB_IMAGE"

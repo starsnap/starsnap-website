@@ -106,6 +106,7 @@ jobs:
           bash -n deploy/github-runner-entrypoint.sh
           bash -n deploy/platform/deploy-platform.sh
           bash -n deploy/platform/deploy-erp.sh
+          bash -n deploy/platform/test-deploy-erp.sh
           bash -n deploy/platform/verify-erp-eat.sh
           bash -n deploy/platform/cleanup-server-transfer.sh
           bash -n deploy/platform/provision-secrets.sh
@@ -137,6 +138,7 @@ jobs:
             deploy/platform/test-provision-secrets.sh \
             deploy/platform/deploy-platform.sh \
             deploy/platform/deploy-erp.sh \
+            deploy/platform/test-deploy-erp.sh \
             deploy/platform/verify-erp-eat.sh \
             deploy/platform/restore-platform-data.sh \
             deploy/platform/switch-main-api-log.sh \
@@ -155,6 +157,7 @@ jobs:
           bash deploy/test-deploy-swarm.sh
           bash deploy/test-verify-external.sh
           bash deploy/platform/test-provision-secrets.sh
+          bash deploy/platform/test-deploy-erp.sh
           bash deploy/platform/test-switch-main-api-log.sh
           bash deploy/platform/test-switch-ollama.sh
           docker stack config --compose-file deploy/docker-stack.yml >/dev/null

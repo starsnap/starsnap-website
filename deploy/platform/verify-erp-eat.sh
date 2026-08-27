@@ -59,8 +59,8 @@ readonly tenant_code user_id
 [[ "$tenant_code" =~ ^[A-Z0-9][A-Z0-9-]{2,31}$ ]]
 [[ "$user_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
 
-session_token="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
-session_hash="$(printf '%s' "$session_token" | node -e 'process.stdin.setEncoding("utf8"); let value=""; process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => process.stdout.write(require("node:crypto").createHash("sha256").update(value).digest("hex")));')"
+session_token="$(docker exec "$web_container" node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+session_hash="$(printf '%s' "$session_token" | docker exec --interactive "$web_container" node -e 'process.stdin.setEncoding("utf8"); let value=""; process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => process.stdout.write(require("node:crypto").createHash("sha256").update(value).digest("hex")));')"
 readonly session_token session_hash
 [[ "$session_hash" =~ ^[0-9a-f]{64}$ ]]
 
@@ -101,7 +101,7 @@ docker exec "$postgres_container" \
       AND page_size = 1
   " >/dev/null
 
-smoke_payload="$(node -e '
+smoke_payload="$(docker exec "$web_container" node -e '
   process.stdout.write(JSON.stringify({
     tenant: process.argv[1],
     token: process.argv[2],
@@ -173,7 +173,7 @@ smoke_result="$(printf '%s' "$smoke_payload" | docker exec --interactive "$web_c
   });
 ' )"
 echo "$smoke_result"
-spec_count="$(printf '%s' "$smoke_result" | node -e '
+spec_count="$(printf '%s' "$smoke_result" | docker exec --interactive "$web_container" node -e '
   process.stdin.setEncoding("utf8");
   let value = "";
   process.stdin.on("data", (chunk) => { value += chunk; });

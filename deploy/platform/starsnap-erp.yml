@@ -224,6 +224,8 @@ services:
       ERP_EMBEDDING_KEEP_ALIVE: 30m
       ERP_EMBEDDING_TIMEOUT_MS: "120000"
       ERP_EMBEDDING_WORKER_TOKEN_FILE: /run/secrets/embedding-worker-token
+      EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key
+      EAT_CACHE_TTL_MINUTES: "360"
       HUB_SERVER_LOG_TIMEOUT_MS: "750"
       HUB_SERVER_LOG_URL: http://starsnap-hub_server:8081/api/server-logs
       PGPOOL_MAX: "1"
@@ -252,6 +254,11 @@ services:
         mode: 0400
       - source: hub_ingest_secret
         target: hub-ingest-secret
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: eat_api_service_key
+        target: eat-api-service-key
         uid: "1000"
         gid: "1000"
         mode: 0400
@@ -387,3 +394,6 @@ secrets:
   hub_ingest_secret:
     external: true
     name: ${HUB_INGEST_SECRET_NAME:?HUB_INGEST_SECRET_NAME is required}
+  eat_api_service_key:
+    external: true
+    name: ${ERP_EAT_API_SECRET_NAME:?ERP_EAT_API_SECRET_NAME is required}

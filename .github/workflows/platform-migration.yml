@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - provision
+          - deploy-erp
           - preflight
           - stage
           - restore
@@ -21,7 +22,7 @@ on:
           - verify-ollama
           - stop-target
       confirmation:
-        description: Required phrase for activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
+        description: Required phrase for deploy-erp, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
         required: false
         default: ""
         type: string
@@ -68,6 +69,7 @@ jobs:
       ERP_SMTP_USERNAME_SECRET_NAME: starsnap-platform-erp-smtp-username-v1
       ERP_SMTP_PASSWORD_SECRET_NAME: starsnap-platform-erp-smtp-password-v1
       ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME: starsnap-platform-erp-embedding-token-v1
+      ERP_EAT_API_SECRET_NAME: starsnap-platform-erp-eat-api-v1
       PLATFORM_TRANSFER_TOKEN_SECRET_NAME: starsnap-platform-transfer-token-20260827
       PLATFORM_TRANSFER_PASSPHRASE_SECRET_NAME: starsnap-platform-transfer-passphrase-20260827
       HUB_POSTGRES_VOLUME_NAME: starsnap-hub-postgres-data-v1
@@ -100,7 +102,7 @@ jobs:
           fi
 
       - name: Sign in to GHCR for private platform images
-        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' }}
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' }}
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
@@ -122,6 +124,7 @@ jobs:
           CLOUDFLARE_ACCESS_AUDIENCE_VALUE: ${{ secrets.PLATFORM_CLOUDFLARE_AUDIENCE_VALUE }}
           ERP_SMTP_USERNAME_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_USERNAME_VALUE }}
           ERP_SMTP_PASSWORD_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_PASSWORD_VALUE }}
+          ERP_EAT_API_VALUE: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
           PLATFORM_TRANSFER_TOKEN_VALUE: ${{ secrets.PLATFORM_TRANSFER_TOKEN_VALUE }}
           PLATFORM_TRANSFER_PASSPHRASE_VALUE: ${{ secrets.PLATFORM_TRANSFER_PASSPHRASE_VALUE }}
         run: bash deploy/platform/provision-secrets.sh
@@ -140,6 +143,13 @@ jobs:
           ERP_OLLAMA_REPLICAS: "1"
           ERP_OLLAMA_MODEL_REPLICAS: "1"
         run: bash deploy/platform/deploy-platform.sh "${{ inputs.phase }}"
+
+      - name: Back up, deploy, and verify ERP web only
+        if: ${{ inputs.phase == 'deploy-erp' }}
+        shell: bash
+        env:
+          ALLOW_ERP_DEPLOY: ${{ inputs.confirmation }}
+        run: bash deploy/platform/deploy-erp.sh
 
       - name: Verify live Ollama semantic path
         if: ${{ inputs.phase == 'verify-ollama' }}

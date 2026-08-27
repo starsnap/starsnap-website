@@ -75,6 +75,7 @@ export ERP_SMTP_MAILER_TOKEN_SECRET_NAME=test-mailer-token
 export ERP_SMTP_USERNAME_SECRET_NAME=test-smtp-user
 export ERP_SMTP_PASSWORD_SECRET_NAME=test-smtp-password
 export ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME=test-embedding-token
+export ERP_EAT_API_SECRET_NAME=test-eat-api
 
 export AWS_ACCESS_KEY_ID_VALUE='provided-aws-id'
 export AWS_SECRET_ACCESS_KEY_VALUE='provided-aws-secret'
@@ -82,6 +83,7 @@ export CLOUDFLARE_ACCESS_TEAM_DOMAIN_VALUE='https://example.cloudflareaccess.com
 export CLOUDFLARE_ACCESS_AUDIENCE_VALUE='provided-cf-audience'
 export ERP_SMTP_USERNAME_VALUE='provided-smtp-user'
 export ERP_SMTP_PASSWORD_VALUE='provided-smtp-password'
+export ERP_EAT_API_VALUE='provided-eat-api-key'
 
 output="$(bash deploy/platform/provision-secrets.sh)"
 
@@ -92,7 +94,8 @@ for secret_value in \
   provided-aws-secret \
   provided-cf-audience \
   provided-smtp-user \
-  provided-smtp-password; do
+  provided-smtp-password \
+  provided-eat-api-key; do
   if grep -Fq "$secret_value" <<<"$output"; then
     echo 'Provisioning output exposed secret material.' >&2
     exit 1
@@ -103,11 +106,13 @@ test "$(cat "$FAKE_SECRET_ROOT/secret-test-main-db")" = 'derived-main-db'
 test "$(cat "$FAKE_SECRET_ROOT/secret-test-aws-id")" = 'provided-aws-id'
 test "$(cat "$FAKE_SECRET_ROOT/secret-test-hub-ingest")" = 'derived-hub-ingest'
 test "$(cat "$FAKE_SECRET_ROOT/secret-test-smtp-password")" = 'provided-smtp-password'
+test "$(cat "$FAKE_SECRET_ROOT/secret-test-eat-api")" = 'provided-eat-api-key'
 test "$(wc -c <"$FAKE_SECRET_ROOT/secret-test-erp-db")" -eq 64
 test "$(wc -c <"$FAKE_SECRET_ROOT/secret-test-admin-jwt")" -eq 96
 
 second_output="$(bash deploy/platform/provision-secrets.sh)"
 grep -Fq 'Reusing existing Docker secret: test-main-db' <<<"$second_output"
 grep -Fq 'Reusing existing Docker secret: test-embedding-token' <<<"$second_output"
+grep -Fq 'Reusing existing Docker secret: test-eat-api' <<<"$second_output"
 
 echo 'provision-secrets tests passed'

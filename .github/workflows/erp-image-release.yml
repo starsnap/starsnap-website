@@ -1,0 +1,87 @@
+name: Publish StarSnap ERP web image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: erp-web-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      startsWith(github.ref, 'refs/heads/release/erp-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the immutable ERP release context
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify release context contains no secret files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .release/erp-web/package-lock.json
+          test -f .release/erp-web/docker-entrypoint.sh
+          if find .release/erp-web -type f \( \
+            -name '.env' -o -name '.env.*' -o -name '.dev.vars' -o \
+            -name '*.pem' -o -name '*.key' \
+          \) | grep -q .; then
+            echo 'Secret-like files are forbidden in the ERP release context.' >&2
+            exit 1
+          fi
+          if grep -RIlE \
+            "(EAT_API_SERVICE_KEY|NEIS_API_KEY)[[:space:]]*[:=][[:space:]]*['\"]?[A-Za-z0-9+/]{32,}={0,2}" \
+            .release/erp-web; then
+            echo 'A literal API credential was found in the ERP release context.' >&2
+            exit 1
+          fi
+
+      - name: Enable ARM64 execution
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable ARM64 ERP image
+        id: publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .release/erp-web
+          file: deploy/platform/dockerfiles/erp-web.Dockerfile
+          platforms: linux/arm64
+          build-args: SITE_ORIGIN=https://erp.starsnap.kr
+          push: true
+          tags: ghcr.io/starsnap/starsnap-erp-web:release-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=erp-web-arm64
+          cache-to: type=gha,mode=max,scope=erp-web-arm64
+          provenance: true
+          sbom: true
+
+      - name: Record immutable release digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '### ERP web image\n\n%s\n' \
+            "ghcr.io/starsnap/starsnap-erp-web@$DIGEST" >>"$GITHUB_STEP_SUMMARY"

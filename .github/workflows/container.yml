@@ -105,6 +105,8 @@ jobs:
           bash -n deploy/deploy-swarm.sh
           bash -n deploy/github-runner-entrypoint.sh
           bash -n deploy/platform/deploy-platform.sh
+          bash -n deploy/platform/deploy-erp.sh
+          bash -n deploy/platform/verify-erp-eat.sh
           bash -n deploy/platform/cleanup-server-transfer.sh
           bash -n deploy/platform/provision-secrets.sh
           bash -n deploy/platform/test-provision-secrets.sh
@@ -134,6 +136,8 @@ jobs:
             deploy/platform/provision-secrets.sh \
             deploy/platform/test-provision-secrets.sh \
             deploy/platform/deploy-platform.sh \
+            deploy/platform/deploy-erp.sh \
+            deploy/platform/verify-erp-eat.sh \
             deploy/platform/restore-platform-data.sh \
             deploy/platform/switch-main-api-log.sh \
             deploy/platform/test-switch-main-api-log.sh \

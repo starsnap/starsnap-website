@@ -150,6 +150,9 @@ jobs:
           docker service inspect \
             --format 'Version={{.Version.Index}} UpdateStatus={{json .UpdateStatus}} UpdateConfig={{json .Spec.UpdateConfig}} RollbackConfig={{json .Spec.RollbackConfig}}' \
             "$api_service"
+          docker service ls \
+            --filter "name=$api_service" \
+            --format 'Service={{.Name}} Replicas={{.Replicas}}'
           docker service ps --no-trunc "$api_service"
           api_container="$(docker ps \
             --filter "label=com.docker.swarm.service.name=$api_service" \
@@ -163,6 +166,29 @@ jobs:
             --format '{{range .Config.Env}}{{println .}}{{end}}' \
             "$api_container" \
             | awk -F= '$1 == "SERVER_LOG_BASE_URL" {print "LogRoute=" $0; count++} END {if (count == 0) print "LogRouteAbsent=true"; if (count > 1) exit 2}'
+          website_containers="$(docker ps \
+            --filter 'label=com.docker.swarm.service.name=starsnap-company_website' \
+            --filter status=running \
+            --format '{{.ID}}')"
+          printf 'WebsiteContainers=%s\n' "$(awk 'NF {count++} END {print count + 0}' <<<"$website_containers")"
+          while IFS= read -r website_container; do
+            test -n "$website_container" || continue
+            docker inspect \
+              --format 'WebsiteContainer={{.Id}} Status={{.State.Status}} Running={{.State.Running}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+              "$website_container"
+            docker exec "$website_container" node -e '
+              fetch("http://starsnap-main_api:8080/api/health")
+                .then(async (response) => {
+                  const body = await response.text();
+                  console.log(`ApiProbeStatus=${response.status} ApiProbeBody=${body}`);
+                  process.exit(response.ok ? 0 : 1);
+                })
+                .catch((error) => {
+                  console.error(`ApiProbeError=${error.message}`);
+                  process.exit(1);
+                });
+            '
+          done <<<"$website_containers"
           if docker config inspect "$marker_name" >/dev/null 2>&1; then
             docker config inspect \
               --format 'RollbackMarkerPresent=true PreviousPresent={{index .Spec.Labels "com.starsnap.previous-present"}} PreviousURL={{index .Spec.Labels "com.starsnap.previous-url"}}' \

@@ -16,10 +16,12 @@ on:
           - cleanup-transfer
           - inspect-log
           - switch-log
+          - switch-ollama
           - verify
+          - verify-ollama
           - stop-target
       confirmation:
-        description: Required phrase for activate, cleanup-transfer, switch-log, or stop-target; leave empty for other phases
+        description: Required phrase for activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
         required: false
         default: ""
         type: string
@@ -72,6 +74,9 @@ jobs:
       ERP_POSTGRES_VOLUME_NAME: starsnap-erp-postgres-data-v1
       ERP_OLLAMA_VOLUME_NAME: starsnap-erp-ollama-models-v1
       ERP_POSTGRES_INIT_CONFIG_NAME: starsnap-erp-postgres-init-v1
+      ERP_EMBEDDING_BASE_URL: http://mac-mini.hamtory.com:11434
+      ERP_OLLAMA_REPLICAS: "0"
+      ERP_OLLAMA_MODEL_REPLICAS: "0"
       PLATFORM_DATA_SHA256: ${{ vars.PLATFORM_DATA_SHA256 }}
 
     steps:
@@ -131,7 +136,22 @@ jobs:
         env:
           ALLOW_PLATFORM_ACTIVATION: ${{ inputs.confirmation }}
           ALLOW_PLATFORM_STOP: ${{ inputs.confirmation }}
+          ERP_EMBEDDING_BASE_URL: http://ollama:11434
+          ERP_OLLAMA_REPLICAS: "1"
+          ERP_OLLAMA_MODEL_REPLICAS: "1"
         run: bash deploy/platform/deploy-platform.sh "${{ inputs.phase }}"
+
+      - name: Verify live Ollama semantic path
+        if: ${{ inputs.phase == 'verify-ollama' }}
+        shell: bash
+        run: bash deploy/platform/verify-ollama.sh
+
+      - name: Switch ERP embedding to native macOS Ollama
+        if: ${{ inputs.phase == 'switch-ollama' }}
+        shell: bash
+        env:
+          ALLOW_OLLAMA_ROUTE: ${{ inputs.confirmation }}
+        run: bash deploy/platform/switch-ollama.sh switch
 
       - name: Switch SNS API logging to target Hub
         if: ${{ inputs.phase == 'switch-log' }}

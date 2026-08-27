@@ -72,10 +72,16 @@ done
 for file in "${stack_files[@]}"; do
   docker stack config --compose-file "$file" >/dev/null
 done
+ERP_EMBEDDING_BASE_URL='http://mac-mini.hamtory.com:11434' \
+ERP_OLLAMA_REPLICAS=0 \
+ERP_OLLAMA_MODEL_REPLICAS=0 \
+  docker stack config --compose-file deploy/platform/starsnap-erp.yml >/dev/null
 
 if command -v node >/dev/null 2>&1; then
   node --check deploy/verify-internal.mjs
   node --check deploy/platform/verify-platform.mjs
+  node --check deploy/platform/verify-ollama.mjs
+  node --check deploy/platform/test-verify-ollama.mjs
 else
   echo "Node.js is unavailable on the deployment host; CI owns JavaScript syntax validation."
 fi
@@ -102,6 +108,17 @@ test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-sns.yml)" -eq 1
 grep -Fq 'starsnap-main_api:8080' deploy/platform/build-platform-images.ps1
 grep -Fq 'sourceImageId' deploy/platform/build-platform-images.ps1
 grep -Fq 'wait_for_completed_service starsnap-erp_ollama-model' deploy/platform/deploy-platform.sh
+grep -Fq 'const modelName = "bge-m3:567m-fp16";' deploy/platform/verify-ollama.mjs
+grep -Fq 'const expectedDigest = "7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab";' deploy/platform/verify-ollama.mjs
+grep -Fq 'const expectedDimension = 1024;' deploy/platform/verify-ollama.mjs
+grep -Fq 'const unitNormTolerance = 1e-3;' deploy/platform/verify-ollama.mjs
+grep -Fq "ERP_EMBEDDING_BASE_URL: \${ERP_EMBEDDING_BASE_URL:-http://ollama:11434}" deploy/platform/starsnap-erp.yml
+grep -Fq "expected_external_url='http://mac-mini.hamtory.com:11434'" deploy/platform/switch-ollama.sh
+grep -Fq "manager_address='192.168.1.103'" deploy/platform/switch-ollama.sh
+grep -Fq 'SWITCH-OLLAMA-192.168.1.6' deploy/platform/switch-ollama.sh
+grep -Fq "verify_endpoint_from_web \"\$external_url\"" deploy/platform/switch-ollama.sh
+grep -Fq "verify_live_web_endpoint \"\$external_url\"" deploy/platform/switch-ollama.sh
+test "$(grep -Fc 'docker service scale --detach=true' deploy/platform/switch-ollama.sh)" -eq 2
 grep -Fq 'com.docker.swarm.service.name=starsnap-erp_web' deploy/platform/deploy-platform.sh
 grep -Fq "docker image inspect --format '{{.Os}}'" deploy/platform/deploy-platform.sh
 grep -Fq "docker tag \"\$image\" \"\$local_image\"" deploy/platform/deploy-platform.sh

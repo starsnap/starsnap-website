@@ -219,7 +219,7 @@ services:
       AUTH_SMTP_MAILER_URL: http://smtp-mailer:3000
       AUTH_TRUST_PROXY_HEADERS: "true"
       ERP_ALLOWED_ORIGINS: https://erp.starsnap.kr
-      ERP_EMBEDDING_BASE_URL: http://ollama:11434
+      ERP_EMBEDDING_BASE_URL: ${ERP_EMBEDDING_BASE_URL:-http://ollama:11434}
       ERP_EMBEDDING_BATCH_SIZE: "128"
       ERP_EMBEDDING_KEEP_ALIVE: 30m
       ERP_EMBEDDING_TIMEOUT_MS: "120000"

@@ -111,12 +111,18 @@ jobs:
           bash -n deploy/platform/restore-platform-data.sh
           bash -n deploy/platform/switch-main-api-log.sh
           bash -n deploy/platform/test-switch-main-api-log.sh
+          bash -n deploy/platform/switch-ollama.sh
+          bash -n deploy/platform/test-switch-ollama.sh
+          bash -n deploy/platform/verify-ollama.sh
           bash -n deploy/platform/validate-platform.sh
           bash -n deploy/test-deploy-swarm.sh
           bash -n deploy/verify-external.sh
           bash -n deploy/test-verify-external.sh
           node --check deploy/verify-internal.mjs
           node --check deploy/platform/verify-platform.mjs
+          node --check deploy/platform/verify-ollama.mjs
+          node --check deploy/platform/test-verify-ollama.mjs
+          node deploy/platform/test-verify-ollama.mjs
           python -c 'import ast, pathlib; ast.parse(pathlib.Path("deploy/platform/relay-server.py").read_text(encoding="utf-8"))'
           bash deploy/platform/validate-platform.sh --ci
           docker run --rm \
@@ -130,7 +136,10 @@ jobs:
             deploy/platform/deploy-platform.sh \
             deploy/platform/restore-platform-data.sh \
             deploy/platform/switch-main-api-log.sh \
-            deploy/platform/test-switch-main-api-log.sh
+            deploy/platform/test-switch-main-api-log.sh \
+            deploy/platform/switch-ollama.sh \
+            deploy/platform/test-switch-ollama.sh \
+            deploy/platform/verify-ollama.sh
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/repo:ro" \
             koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
@@ -143,6 +152,7 @@ jobs:
           bash deploy/test-verify-external.sh
           bash deploy/platform/test-provision-secrets.sh
           bash deploy/platform/test-switch-main-api-log.sh
+          bash deploy/platform/test-switch-ollama.sh
           docker stack config --compose-file deploy/docker-stack.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.bootstrap.yml >/dev/null
           docker stack config --compose-file deploy/github-runner-stack.yml >/dev/null

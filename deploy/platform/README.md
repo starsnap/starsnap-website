@@ -20,7 +20,10 @@ Internet
 192.168.1.103 manager-local persistent state
   -> starsnap-hub-postgres-data-v1
   -> starsnap-erp-postgres-data-v1
-  -> starsnap-erp-ollama-models-v1
+  -> starsnap-erp-ollama-models-v1 (retained for rollback)
+
+192.168.1.6 mac-mini.hamtory.com
+  -> native macOS Ollama :11434 (ERP embedding target after switch)
 ```
 
 All Caddy upstreams use `starsnap-main_app-net` service DNS. No application
@@ -54,6 +57,9 @@ requires a compatible server GPU or a replacement inference service.
   verification boundary.
 - Source desktop containers and volumes are stopped only for the final
   write-quiesced snapshot; they are not removed and remain the rollback copy.
+- The Mac Ollama listener must remain LAN-only, allow the manager at
+  `192.168.1.103`, and resolve as `mac-mini.hamtory.com` from the live ERP web
+  task. Do not forward port 11434 from the router.
 
 ## Prepared phases
 
@@ -103,7 +109,20 @@ requires a compatible server GPU or a replacement inference service.
    existing SNS API log destination to `http://starsnap-hub_server:8081`, then
    merge the separate Caddy cutover commit and require internal plus external
    checks for SNS, Chat, ERP, Admin, and Log.
-10. Keep the stopped desktop application containers and volumes through the
+10. While the manager-local Ollama service is still healthy, dispatch
+   `switch-ollama` with confirmation `SWITCH-OLLAMA-192.168.1.6`. It first
+   probes `http://mac-mini.hamtory.com:11434` from the actual ERP web container,
+   requiring the exact pinned model digest, response model, 1024 dimensions,
+   finite values, and a unit-length embedding. It then updates only the ERP web
+   endpoint, waits for convergence, repeats the semantic probe, scales the two
+   internal Ollama services to zero, and probes again. A failed step restores
+   the previous endpoint and replica counts; rerunning an already completed
+   switch performs a semantic check without another update.
+11. Dispatch `verify-ollama` to run a non-persistent semantic probe through the
+   live ERP web task. It verifies the configured Ollama service, pinned
+   `bge-m3:567m-fp16` digest, and one 1024-dimension embedding without printing
+   the vector or changing Swarm, volume, or database configuration.
+12. Keep the stopped desktop application containers and volumes through the
    observation window. Stop the temporary relay, remove its generated snapshot
    only after public verification, and delete the transient GitHub/Swarm
    transfer secrets.
@@ -122,12 +141,15 @@ changes, restore the previous Caddy service specification, restart the exact
 desktop containers that were stopped for quiescence, and point SNS API log
 delivery back to its previous value. Do not delete either target or source
 volumes during rollback. Reconcile any writes accepted after cutover before a
-later retry.
+later retry. The Ollama switch script automatically restores the internal
+Ollama replicas and ERP web endpoint when a pre-cutover rollback marker exists;
+if that verification also fails, it preserves the marker for manual recovery.
 
 ## Local validation
 
 ```bash
 bash deploy/platform/validate-platform.sh --ci
+bash deploy/platform/test-switch-ollama.sh
 bash deploy/test-deploy-swarm.sh
 bash deploy/test-verify-external.sh
 ```

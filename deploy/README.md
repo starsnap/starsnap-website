@@ -70,8 +70,8 @@ label and requires it to be the only labeled node in the Swarm.
   `1/1` replicas, a completed update, and exactly one local task container with a
   `healthy` Docker healthcheck for each company service.
 - Once the expected Caddy image and config are healthy, the deploy script runs
-  the internal route verifier from the healthy website task over the stack
-  overlay. Route verification remains inside the rollback boundary.
+  the internal route verifier from the healthy ERP task over the shared
+  application overlay. Route verification remains inside the rollback boundary.
 - Manager-side convergence never curls a LAN address, so it does not depend on
   router hairpin NAT or a manager host-port path.
 - On verification failure, the workflow requests a rollback when a previous
@@ -83,8 +83,8 @@ The same `starsnap-company` stack runs the official Caddy `2.10.2-alpine`
 multi-platform image pinned by immutable manifest digest. Caddy and the website
 are both constrained to the sole manager carrying
 `starsnap.actions-runner=true`. This makes the local website container available
-to the deployment verifier and keeps Caddy's certificate volumes on the same
-node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
+for direct diagnostics and keeps Caddy's certificate volumes on the same node.
+Caddy publishes TCP ports 80 and 443; the website keeps its existing port
 3000 publication for direct internal diagnostics.
 
 `Caddyfile` provides these routes:
@@ -97,27 +97,22 @@ node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   `starsnap-main_app-net` overlay; Caddy preserves normal HTTP and WebSocket
   proxying without depending on a manager-host port.
 - `https://admin.starsnap.kr/*` serves the Admin web console from
-  `192.168.1.2:5174`, while `/api/*` is routed to the Admin API at
-  `192.168.1.2:8082`. Both listeners must bind only to the reserved LAN address,
-  allow traffic only from the Caddy manager at `192.168.1.103`, and never be
-  forwarded directly from the WAN. The Admin API must allow
+  `starsnap-admin_web:5174`, while `/api/*` is routed to
+  `starsnap-admin_server:8082`. Both services share the external application
+  overlay with Caddy and expose no WAN-facing host ports. The Admin API must allow
   `WEB_ORIGIN=https://admin.starsnap.kr`, set secure production cookies, and
   expose `GET /api/health` with `{"status":"ok"}` for deployment verification.
-- `https://erp.starsnap.kr/*` is reverse-proxied over the private LAN to the
-  current StarSnap ERP Docker host at `192.168.1.2:3001`. That host must keep a
-  DHCP reservation, bind the ERP web listener only to `192.168.1.2`, set
-  `SITE_ORIGIN=https://erp.starsnap.kr`, and allow TCP 3001 only from the Caddy
-  manager at `192.168.1.103`. Never forward WAN port 3001 on the router. The
-  public ERP host always returns HTTP 404 for `/api/health` and its subpaths;
-  the deployment verifier checks detailed health directly over the private LAN.
-- `https://sns.starsnap.kr/*` is reverse-proxied over the private LAN to the
-  running `starsnap-main-web` Docker container at `192.168.1.2:3000`. This is a
-  standalone Docker workload, not a service in the current `starsnap-main`
-  Swarm stack. Keep the host address reserved and never forward WAN port 3000;
-  Caddy is the only public ingress. The web container continues to proxy its
+- `https://erp.starsnap.kr/*` is reverse-proxied to `starsnap-erp_web:3000`
+  over the shared application overlay. Its PostgreSQL and Ollama data use
+  manager-local persistent volumes on `192.168.1.103`; the public ERP host
+  always returns HTTP 404 for `/api/health` and its subpaths, while the
+  deployment verifier checks detailed health directly through service DNS.
+- `https://sns.starsnap.kr/*` is reverse-proxied to
+  `starsnap-sns_web:3000` over the shared application overlay. Caddy is the only
+  public ingress. The web container continues to proxy its
   same-origin `/api/*` and `/ws-chat` requests to the StarSnap backend.
 - `https://chat.starsnap.kr/*` is reverse-proxied to the same
-  `starsnap-main-web` container at `192.168.1.2:3000`. The shared web build
+  `starsnap-sns_web:3000` service. The shared web build
   selects its message-only shell from the public hostname, while `/api/*` and
   `/ws-chat` continue to reach the same backend, chat rooms, and message store
   used by the SNS surface. The backend `CORS_ORIGIN_PATTERNS` value must include
@@ -125,6 +120,11 @@ node. Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
   verification also requires the shared web build's `social chat` capability
   marker so an older SNS-only image cannot pass the Chat release gate.
+- `https://log.starsnap.kr/*` serves `starsnap-hub_web:5173`; only
+  `/api/dashboard/*` is proxied to `starsnap-hub_server:8081`, while all other
+  public `/api/*` routes remain hidden with HTTP 404. The Hub database is a
+  manager-local persistent volume and dashboard requests retain Cloudflare
+  Access origin validation.
 - Both HTTP and HTTPS requests for `www.starsnap.kr` are redirected directly to
   the equivalent `https://starsnap.kr` URI.
 
@@ -140,17 +140,19 @@ overlay and the `starsnap-main_api` service to exist, then creates a
 content-addressed Docker Swarm config and verifies both company services through
 Swarm state plus their container healthchecks. After the expected Caddy image,
 config, update state, and healthcheck converge, it executes
-`verify-internal.mjs` inside the sole healthy website container. That verifier
-checks the website marker and icon directly, then reaches Caddy at service DNS
-`caddy:80/443` to check the apex HTTPS marker/icon, HTTP and HTTPS `www`
+`verify-internal.mjs` inside the sole healthy ERP web container. That verifier
+reaches Caddy at service DNS `caddy:80/443` to check the apex HTTPS marker/icon,
+HTTP and HTTPS `www`
 one-hop redirects with path/query preservation, and the API HTTP redirect plus
 HTTPS health response. It also verifies the ERP HTTP redirect and HTTPS page
 marker through Caddy, then checks the database-backed `/api/health` response
-directly over the LAN so detailed health data is never exposed publicly.
-It also verifies the SNS and Chat HTTP redirects, HTTPS page markers, and
-same-origin API health responses through the running StarSnap web container.
-Finally, it verifies the Admin HTTP redirect, HTTPS `StarSnap Admin` page marker, and public
-`/api/health` 200 response with `{"status":"ok"}` through Caddy.
+directly through `starsnap-erp_web` service DNS so detailed health data is never
+exposed publicly. It also verifies the SNS and Chat HTTP redirects, HTTPS page
+markers, and same-origin API health responses through `starsnap-sns_web`.
+Finally, it verifies the Admin HTTP redirect, HTTPS `StarSnap Admin` page marker,
+and public `/api/health` 200 response with `{"status":"ok"}` through Caddy,
+plus the Log Hub dashboard marker, Access gate, service health, and blocked
+public ingestion route.
 HTTPS requests set each public hostname as TLS SNI and
 retain normal CA and hostname verification; no insecure TLS mode is used.
 

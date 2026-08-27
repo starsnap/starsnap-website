@@ -15,6 +15,7 @@ readonly cleanup_timeout_seconds="${STARSNAP_CLEANUP_TIMEOUT_SECONDS:-60}"
 
 : "${STACK_NAME:=starsnap-company}"
 : "${SERVICE_NAME:=${STACK_NAME}_website}"
+: "${INTERNAL_VERIFIER_SERVICE_NAME:=starsnap-erp_web}"
 : "${STARSNAP_WEBSITE_IMAGE:?STARSNAP_WEBSITE_IMAGE is required}"
 
 readonly caddy_service_name="${STACK_NAME}_caddy"
@@ -184,16 +185,16 @@ service_health_status() {
 }
 
 verify_internal_routes_once() {
-  local website_container_id=""
+  local verifier_container_id=""
 
-  if ! website_container_id="$(service_container_id "$SERVICE_NAME")"; then
+  if ! verifier_container_id="$(service_container_id "$INTERNAL_VERIFIER_SERVICE_NAME")"; then
     return 1
   fi
 
-  # The website task shares Caddy's stack overlay, so caddy:80/443 avoids the
-  # manager LAN and router hairpin. The Node verifier keeps normal CA and
-  # hostname validation by sending each public hostname as TLS servername.
-  docker exec --interactive "$website_container_id" \
+  # The ERP task is attached to the shared application overlay used by Caddy
+  # and the migrated services. This keeps verification off the manager LAN and
+  # preserves normal CA/hostname validation for every public hostname.
+  docker exec --interactive "$verifier_container_id" \
     node --input-type=module <"$internal_route_verifier"
 }
 

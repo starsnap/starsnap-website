@@ -25,13 +25,13 @@ erp.starsnap.kr {
 		respond 404
 	}
 	handle {
-		reverse_proxy 192.168.1.2:3001
+		reverse_proxy starsnap-erp_web:3000
 	}
 }
 
 sns.starsnap.kr {
 	encode zstd gzip
-	reverse_proxy 192.168.1.2:3000
+	reverse_proxy starsnap-sns_web:3000
 }
 
 chat.starsnap.kr {
@@ -43,7 +43,7 @@ chat.starsnap.kr {
 		X-Frame-Options "DENY"
 		X-StarSnap-App-Surface "chat"
 	}
-	reverse_proxy 192.168.1.2:3000
+	reverse_proxy starsnap-sns_web:3000
 }
 
 admin.starsnap.kr {
@@ -56,10 +56,10 @@ admin.starsnap.kr {
 
 	@admin_api path /api/*
 	handle @admin_api {
-		reverse_proxy 192.168.1.2:8082
+		reverse_proxy starsnap-admin_server:8082
 	}
 	handle {
-		reverse_proxy 192.168.1.2:5174
+		reverse_proxy starsnap-admin_web:5174
 	}
 }
 
@@ -73,7 +73,7 @@ log.starsnap.kr {
 
 	@log_dashboard_api path /api/dashboard/*
 	handle @log_dashboard_api {
-		reverse_proxy 192.168.1.2:8081
+		reverse_proxy starsnap-hub_server:8081
 	}
 
 	@log_blocked_api path /api/*
@@ -82,7 +82,7 @@ log.starsnap.kr {
 	}
 
 	handle {
-		reverse_proxy 192.168.1.2:5173
+		reverse_proxy starsnap-hub_web:5173
 	}
 }
 

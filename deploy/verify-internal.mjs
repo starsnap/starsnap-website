@@ -94,16 +94,6 @@ function caddyHttps(host, path) {
 }
 
 async function main() {
-  expectMarker(
-    await request(http, { hostname: "127.0.0.1", port: 3000, path: "/" }),
-    "StarSnap",
-    "website root",
-  );
-  expectNonEmpty(
-    await request(http, { hostname: "127.0.0.1", port: 3000, path: "/icon.png" }),
-    "website icon",
-  );
-
   expectRedirect(
     await caddyHttp("starsnap.kr", redirectUri),
     308,
@@ -170,11 +160,12 @@ async function main() {
     "ERP public trailing-slash health",
   );
   const erpHealth = await request(http, {
-    hostname: "192.168.1.2",
-    port: 3001,
+    hostname: "starsnap-erp_web",
+    port: 3000,
     path: "/api/health",
+    headers: { host: "erp.starsnap.kr" },
   });
-  expectSuccess(erpHealth, "ERP LAN health");
+  expectSuccess(erpHealth, "ERP service health");
   let erpPayload;
   try {
     erpPayload = JSON.parse(erpHealth.body.toString("utf8"));
@@ -283,19 +274,20 @@ async function main() {
     "Log Hub dashboard Access gate",
   );
   const logHealth = await request(http, {
-    hostname: "192.168.1.2",
+    hostname: "starsnap-hub_server",
     port: 8081,
     path: "/actuator/health",
+    headers: { host: "log.starsnap.kr" },
   });
-  expectStatus(logHealth, 200, "Log Hub LAN health");
+  expectStatus(logHealth, 200, "Log Hub service health");
   let logHealthPayload;
   try {
     logHealthPayload = JSON.parse(logHealth.body.toString("utf8"));
   } catch {
-    throw new Error("Log Hub LAN health did not return JSON");
+    throw new Error("Log Hub service health did not return JSON");
   }
   if (logHealthPayload.status !== "UP") {
-    throw new Error("Log Hub LAN health status was not UP");
+    throw new Error("Log Hub service health status was not UP");
   }
   expectStatus(
     await caddyHttps("log.starsnap.kr", "/api/server-logs"),

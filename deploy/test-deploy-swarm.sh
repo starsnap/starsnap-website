@@ -172,7 +172,9 @@ docker() {
     "service ps")
       ;;
     "ps --filter")
-      if [[ " $* " == *"com.docker.swarm.service.name=starsnap-company_website"* \
+      if [[ " $* " == *"com.docker.swarm.service.name=starsnap-erp_web"* ]]; then
+        printf '%s\n' "erp-container"
+      elif [[ " $* " == *"com.docker.swarm.service.name=starsnap-company_website"* \
         && -f "$FAKE_SWARM_STATE/current-image" ]]; then
         printf '%s\n' "website-container"
       elif [[ " $* " == *"com.docker.swarm.service.name=starsnap-company_caddy"* \
@@ -202,6 +204,10 @@ docker() {
       ;;
     "exec --interactive")
       verifier_source="$(cat)"
+      if [[ "$3" != "erp-container" ]]; then
+        echo "Expected the route verifier to run from the ERP application network." >&2
+        return 1
+      fi
       grep -Fq 'hostname: "caddy"' <<<"$verifier_source"
       grep -Fq 'rejectUnauthorized: true' <<<"$verifier_source"
       if [[ " $* " != *" node --input-type=module "* ]]; then
@@ -367,21 +373,22 @@ grep -Fq "Website rollback verified: $previous_image" \
 test ! -e "$FAKE_SWARM_STATE/caddy-image"
 
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:3001" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:3000" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-erp_web:3000" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-sns_web:3000" deploy/Caddyfile
 grep -Fq "chat.starsnap.kr {" deploy/Caddyfile
 chat_caddy_block="$(sed -n '/^chat\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
-grep -Fq "reverse_proxy 192.168.1.2:3000" <<<"$chat_caddy_block"
+grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$chat_caddy_block"
 grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$chat_caddy_block"
 grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$chat_caddy_block"
 grep -Fq 'X-Frame-Options "DENY"' <<<"$chat_caddy_block"
 grep -Fq 'X-StarSnap-App-Surface "chat"' <<<"$chat_caddy_block"
 grep -Fq "admin.starsnap.kr {" deploy/Caddyfile
 grep -Fq "@admin_api path /api/*" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:8082" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:5174" deploy/Caddyfile
-grep -Fq 'hostname: "192.168.1.2"' deploy/verify-internal.mjs
-grep -Fq 'port: 3001' deploy/verify-internal.mjs
+grep -Fq "reverse_proxy starsnap-admin_server:8082" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-admin_web:5174" deploy/Caddyfile
+grep -Fq 'hostname: "starsnap-erp_web"' deploy/verify-internal.mjs
+grep -Fq 'port: 3000' deploy/verify-internal.mjs
+grep -Fq 'headers: { host: "erp.starsnap.kr" }' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("erp.starsnap.kr", "/api/health/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("sns.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttp("chat.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
@@ -393,19 +400,25 @@ grep -Fq 'caddyHttps("admin.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq "log.starsnap.kr {" deploy/Caddyfile
 grep -Fq "@log_dashboard_api path /api/dashboard/*" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:8081" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-hub_server:8081" deploy/Caddyfile
 grep -Fq "@log_blocked_api path /api/*" deploy/Caddyfile
-grep -Fq "reverse_proxy 192.168.1.2:5173" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-hub_web:5173" deploy/Caddyfile
 grep -Fq 'caddyHttp("log.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("log.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'await caddyHttps("log.starsnap.kr", logServicesPath)' deploy/verify-internal.mjs
 grep -Fq '"Log Hub dashboard Access gate"' deploy/verify-internal.mjs
+grep -Fq 'hostname: "starsnap-hub_server"' deploy/verify-internal.mjs
 grep -Fq 'port: 8081' deploy/verify-internal.mjs
-grep -Fq 'expectStatus(logHealth, 200, "Log Hub LAN health")' deploy/verify-internal.mjs
+grep -Fq 'headers: { host: "log.starsnap.kr" }' deploy/verify-internal.mjs
+grep -Fq 'expectStatus(logHealth, 200, "Log Hub service health")' deploy/verify-internal.mjs
 grep -Fq 'if (logHealthPayload.status !== "UP")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("log.starsnap.kr", "/api/server-logs")' deploy/verify-internal.mjs
 if grep -Fq "reverse_proxy 192.168.1.103:8080" deploy/Caddyfile; then
   echo "Caddy must reach the API over the shared Swarm overlay." >&2
+  exit 1
+fi
+if grep -Fq "192.168.1.2" deploy/Caddyfile deploy/verify-internal.mjs; then
+  echo "Production routes must not depend on the desktop host." >&2
   exit 1
 fi
 

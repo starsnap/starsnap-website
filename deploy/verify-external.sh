@@ -16,6 +16,8 @@ readonly chat_http_url="http://chat.starsnap.kr"
 readonly chat_https_url="https://chat.starsnap.kr"
 readonly admin_http_url="http://admin.starsnap.kr"
 readonly admin_https_url="https://admin.starsnap.kr"
+readonly log_http_url="http://log.starsnap.kr"
+readonly log_https_url="https://log.starsnap.kr"
 readonly redirect_uri='/__starsnap_external_verify__/path?source=github&value=1'
 readonly attempts="${STARSNAP_EXTERNAL_VERIFY_ATTEMPTS:-36}"
 readonly delay_seconds="${STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS:-10}"
@@ -133,6 +135,32 @@ verify_ok_json() {
     }
   ' "$output_file"; then
     echo "$label response was not ok." >&2
+    return 1
+  fi
+}
+
+verify_cloudflare_access_gate() {
+  local request_url="$1"
+  local auth_header=""
+  local location=""
+  local status=""
+
+  if ! curl "${curl_common[@]}" \
+    --dump-header "$headers_file" \
+    --output /dev/null \
+    "$request_url"; then
+    echo "Cloudflare Access gate request failed: $request_url" >&2
+    return 1
+  fi
+
+  status="$(awk 'toupper($1) ~ /^HTTP\// { value=$2 } END { print value }' "$headers_file")"
+  location="$(awk 'tolower($1) == "location:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$headers_file")"
+  auth_header="$(awk 'tolower($1) == "www-authenticate:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$headers_file")"
+
+  if [[ "$status" != "302" \
+    || ! "$location" =~ ^https://[a-zA-Z0-9.-]+\.cloudflareaccess\.com/cdn-cgi/access/login/log\.starsnap\.kr\? \
+    || "$auth_header" != Cloudflare-Access* ]]; then
+    echo "Unexpected Log Hub Access gate: status=$status location=$location auth=${auth_header%% *}" >&2
     return 1
   fi
 }
@@ -273,13 +301,19 @@ verify_once() {
     "${admin_https_url}/api/health" \
     "$admin_health_file" \
     "Public Admin API health" || return 1
+
+  verify_redirect \
+    "${log_http_url}/" \
+    "301" \
+    "${log_https_url}/" || return 1
+  verify_cloudflare_access_gate "${log_https_url}/" || return 1
 }
 
 attempt=1
 while (( attempt <= attempts )); do
   echo "External verification attempt $attempt/$attempts"
   if verify_once; then
-    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, chat.starsnap.kr, and admin.starsnap.kr."
+    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, chat.starsnap.kr, admin.starsnap.kr, and log.starsnap.kr."
     exit 0
   fi
 

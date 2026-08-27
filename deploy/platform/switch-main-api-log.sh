@@ -5,6 +5,7 @@ set -Eeuo pipefail
 readonly mode="${1:-}"
 readonly api_service="starsnap-main_api"
 readonly hub_service="starsnap-hub_server"
+readonly probe_service="starsnap-erp_web"
 readonly new_url="http://starsnap-hub_server:8081"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly route_timeout_seconds="${STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS:-900}"
@@ -52,7 +53,7 @@ wait_for_api() {
   local expected_url="$2"
   local allow_extended_monitoring="$3"
   local expected_line=""
-  local expected_replicas deadline replicas update_state website_container api_container running_line
+  local expected_replicas deadline replicas update_state probe_container api_container running_line
   local running_env_valid
   local stable_observations=0
   if [[ "$expected_present" == "true" ]]; then
@@ -72,7 +73,7 @@ wait_for_api() {
     esac
     if [[ "$replicas" == "$expected_replicas/$expected_replicas" ]]; then
       api_container="$(running_service_container_id "$api_service" 2>/dev/null || true)"
-      website_container="$(running_service_container_id starsnap-company_website 2>/dev/null || true)"
+      probe_container="$(running_service_container_id "$probe_service" 2>/dev/null || true)"
       running_line=""
       running_env_valid=false
       if [[ -n "$api_container" ]]; then
@@ -80,10 +81,10 @@ wait_for_api() {
           running_env_valid=true
         fi
       fi
-      if [[ -n "$website_container" \
+      if [[ -n "$probe_container" \
         && "$running_env_valid" == "true" \
         && "$running_line" == "$expected_line" ]] \
-        && docker exec "$website_container" node -e '
+        && docker exec "$probe_container" node -e '
           fetch("http://starsnap-main_api:8080/api/health")
             .then(async (response) => {
               const body = await response.json();

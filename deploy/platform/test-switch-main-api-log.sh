@@ -108,8 +108,8 @@ docker() {
     ps:*)
       if [[ "$*" == *"com.docker.swarm.service.name=starsnap-main_api"* ]]; then
         printf 'api-container\n'
-      elif [[ "$*" == *"com.docker.swarm.service.name=starsnap-company_website"* ]]; then
-        printf 'website-container\n'
+      elif [[ "$*" == *"com.docker.swarm.service.name=starsnap-erp_web"* ]]; then
+        printf 'probe-container\n'
       else
         return 1
       fi

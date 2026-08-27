@@ -1,0 +1,62 @@
+{
+  "name": "starsnap-erp-web",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vinext start",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test:hub-log": "node --test scripts/hub-server-log.test.mjs",
+    "test:school-sync": "node --test scripts/sync-neis-schools.test.mjs",
+    "test:eat-bid": "node --test scripts/eat-bid.test.mjs",
+    "test:worker-config": "node --test scripts/write-worker-config.test.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:backup:d1": "node scripts/backup-d1.mjs",
+    "db:migrate:d1": "node scripts/migrate-d1-to-postgres.mjs",
+    "organization:provision": "node scripts/provision-organization-type.mjs",
+    "schools:sync": "node scripts/sync-neis-schools.mjs",
+    "api:smoke": "node scripts/api-smoke.mjs",
+    "api:smoke:product-10k": "node scripts/product-bulk-10k-smoke.mjs",
+    "api:smoke:monthly-price": "node scripts/monthly-price-smoke.mjs",
+    "api:smoke:monthly-price-10k": "node scripts/monthly-price-smoke.mjs --bulk-10k",
+    "api:smoke:product-search": "node scripts/product-search-smoke.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "fast-xml-parser": "5.11.0",
+    "lucide-react": "^1.33.0",
+    "next": "^16.3.2",
+    "pg": "8.23.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/workers-types": "4.20260515.1",
+    "@emnapi/core": "1.8.1",
+    "@emnapi/runtime": "1.8.1",
+    "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "react-server-dom-webpack": "19.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "vinext": "1.0.0-beta.3",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  },
+  "type": "module"
+}

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#17324D"/>
+  <circle cx="1090" cy="-30" r="280" fill="#254965"/>
+  <circle cx="1050" cy="590" r="220" fill="#1E4564"/>
+  <rect x="64" y="60" width="64" height="64" rx="17" fill="#C9F31D"/>
+  <path d="M108 79H88c-6 0-10 4-10 9s4 8 10 8h14c6 0 10 4 10 9s-4 9-10 9H80" fill="none" stroke="#17324D" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
+  <text x="150" y="89" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="24" font-weight="800" letter-spacing="2">STARSNAP ERP</text>
+  <text x="150" y="116" fill="#AFC2D1" font-family="Arial, sans-serif" font-size="16" font-weight="600">BUSINESS OPERATIONS</text>
+
+  <text x="64" y="224" fill="#C9F31D" font-family="Arial, sans-serif" font-size="18" font-weight="800" letter-spacing="2">MULTI-TENANT · FIELD READY</text>
+  <text x="64" y="294" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="49" font-weight="900">모든 업무를 하나의 흐름으로</text>
+  <text x="64" y="342" fill="#C7D4DE" font-family="Arial, sans-serif" font-size="22" font-weight="600">상품부터 발주, 재고, 생산, 배송, 정산, 고객관리까지</text>
+
+  <g transform="translate(64 398)" font-family="Arial, sans-serif" font-size="17" font-weight="800">
+    <rect width="132" height="54" rx="15" fill="#FFFFFF"/><text x="66" y="34" fill="#17324D" text-anchor="middle">상품·서비스</text>
+    <text x="151" y="34" fill="#C9F31D" font-size="24">›</text>
+    <rect x="174" width="132" height="54" rx="15" fill="#FFFFFF"/><text x="240" y="34" fill="#17324D" text-anchor="middle">발주·구매</text>
+    <text x="325" y="34" fill="#C9F31D" font-size="24">›</text>
+    <rect x="348" width="132" height="54" rx="15" fill="#FFFFFF"/><text x="414" y="34" fill="#17324D" text-anchor="middle">입고·재고</text>
+    <text x="499" y="34" fill="#C9F31D" font-size="24">›</text>
+    <rect x="522" width="108" height="54" rx="15" fill="#FFFFFF"/><text x="576" y="34" fill="#17324D" text-anchor="middle">생산</text>
+    <text x="649" y="34" fill="#C9F31D" font-size="24">›</text>
+    <rect x="672" width="108" height="54" rx="15" fill="#FFFFFF"/><text x="726" y="34" fill="#17324D" text-anchor="middle">배송</text>
+  </g>
+
+  <g transform="translate(846 194)">
+    <rect width="290" height="310" rx="28" fill="#F3F6F8"/>
+    <rect x="22" y="22" width="246" height="58" rx="16" fill="#FFFFFF"/>
+    <circle cx="52" cy="51" r="15" fill="#C9F31D"/>
+    <rect x="80" y="39" width="106" height="10" rx="5" fill="#17324D"/>
+    <rect x="80" y="57" width="73" height="7" rx="4" fill="#A9B8C4"/>
+    <rect x="22" y="98" width="116" height="88" rx="18" fill="#FFFFFF"/>
+    <rect x="152" y="98" width="116" height="88" rx="18" fill="#FFFFFF"/>
+    <text x="40" y="126" fill="#64748B" font-family="Arial, sans-serif" font-size="12" font-weight="700">오늘 주문</text>
+    <text x="40" y="163" fill="#17324D" font-family="Arial, sans-serif" font-size="30" font-weight="900">3,240</text>
+    <text x="170" y="126" fill="#64748B" font-family="Arial, sans-serif" font-size="12" font-weight="700">배송 완료</text>
+    <text x="170" y="163" fill="#17324D" font-family="Arial, sans-serif" font-size="30" font-weight="900">18/24</text>
+    <rect x="22" y="204" width="246" height="84" rx="18" fill="#17324D"/>
+    <rect x="42" y="229" width="150" height="9" rx="5" fill="#FFFFFF"/>
+    <rect x="42" y="249" width="201" height="8" rx="4" fill="#365974"/>
+    <rect x="42" y="249" width="142" height="8" rx="4" fill="#C9F31D"/>
+  </g>
+
+  <text x="64" y="548" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="18" font-weight="800">WEB · ANDROID · IPHONE</text>
+  <text x="64" y="581" fill="#AFC2D1" font-family="Arial, sans-serif" font-size="16">다양한 업종에서 사용하는 독립형 통합 ERP</text>
+</svg>

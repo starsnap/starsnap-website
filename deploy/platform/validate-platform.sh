@@ -102,7 +102,7 @@ test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-sns.yml)" -eq 1
 grep -Fq 'starsnap-main_api:8080' deploy/platform/build-platform-images.ps1
 grep -Fq 'sourceImageId' deploy/platform/build-platform-images.ps1
 grep -Fq 'wait_for_completed_service starsnap-erp_ollama-model' deploy/platform/deploy-platform.sh
-grep -Fq 'com.docker.swarm.service.name=starsnap-sns_web' deploy/platform/deploy-platform.sh
+grep -Fq 'com.docker.swarm.service.name=starsnap-erp_web' deploy/platform/deploy-platform.sh
 grep -Fq "docker image inspect --format '{{.Os}}'" deploy/platform/deploy-platform.sh
 grep -Fq "docker tag \"\$image\" \"\$local_image\"" deploy/platform/deploy-platform.sh
 grep -Fq "manager_local_image_registry='starsnap.invalid'" deploy/platform/deploy-platform.sh

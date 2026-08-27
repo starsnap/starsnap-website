@@ -119,8 +119,8 @@ deploy_stacks() {
     --compose-file deploy/platform/starsnap-sns.yml starsnap-sns
 }
 
-refresh_rejected_private_image_tasks() {
-  local service task_row state error
+refresh_private_image_tasks() {
+  local service
   local -a services=(
     starsnap-erp_smtp-mailer
     starsnap-erp_web
@@ -133,14 +133,8 @@ refresh_rejected_private_image_tasks() {
   )
 
   for service in "${services[@]}"; do
-    task_row="$(docker service ps --no-trunc \
-      --format '{{.CurrentState}}|{{.Error}}' \
-      "$service" 2>/dev/null | head -n 1)"
-    IFS='|' read -r state error <<<"$task_row"
-    if [[ "$state" == Rejected* && "$error" == *"No such image:"* ]]; then
-      echo "Refreshing $service after a rejected private-image task."
-      docker service update --with-registry-auth --force "$service" >/dev/null
-    fi
+    echo "Refreshing the authenticated private-image task for $service."
+    docker service update --with-registry-auth --force "$service" >/dev/null
   done
 }
 
@@ -246,7 +240,7 @@ case "$phase" in
     test "${ALLOW_PLATFORM_ACTIVATION:-}" = "ACTIVATE-192.168.1.103"
     require_restored_data_marker
     deploy_stacks
-    refresh_rejected_private_image_tasks
+    refresh_private_image_tasks
     wait_for_replicas starsnap-erp_postgres 1
     wait_for_replicas starsnap-erp_ollama 1
     wait_for_completed_service starsnap-erp_ollama-model

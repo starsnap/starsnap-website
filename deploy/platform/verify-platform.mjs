@@ -2,10 +2,18 @@ import http from "node:http";
 
 const timeoutMs = 10_000;
 
-function request(hostname, port, path) {
+function request(hostname, port, path, hostHeader) {
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { hostname, port, path, method: "GET", timeout: timeoutMs, agent: false },
+      {
+        hostname,
+        port,
+        path,
+        method: "GET",
+        headers: { host: hostHeader },
+        timeout: timeoutMs,
+        agent: false,
+      },
       (response) => {
         const chunks = [];
         response.on("data", (chunk) => chunks.push(chunk));
@@ -47,18 +55,18 @@ function parseJson(response, label) {
 
 async function main() {
   expectMarker(
-    await request("starsnap-sns_web", 3000, "/"),
+    await request("starsnap-sns_web", 3000, "/", "sns.starsnap.kr"),
     "<title>StarSnap</title>",
     "SNS service root",
   );
 
   expectMarker(
-    await request("starsnap-admin_web", 5174, "/"),
+    await request("starsnap-admin_web", 5174, "/", "admin.starsnap.kr"),
     "StarSnap Admin",
     "Admin web service root",
   );
   const adminHealth = parseJson(
-    await request("starsnap-admin_server", 8082, "/api/health"),
+    await request("starsnap-admin_server", 8082, "/api/health", "admin.starsnap.kr"),
     "Admin service health",
   );
   if (adminHealth.status !== "ok") {
@@ -66,12 +74,12 @@ async function main() {
   }
 
   expectMarker(
-    await request("starsnap-hub_web", 5173, "/"),
+    await request("starsnap-hub_web", 5173, "/", "log.starsnap.kr"),
     "StarSnap Log Dashboard",
     "Log Hub web service root",
   );
   const hubHealth = parseJson(
-    await request("starsnap-hub_server", 8081, "/actuator/health"),
+    await request("starsnap-hub_server", 8081, "/actuator/health", "log.starsnap.kr"),
     "Log Hub service health",
   );
   if (hubHealth.status !== "UP") {
@@ -79,12 +87,12 @@ async function main() {
   }
 
   expectMarker(
-    await request("starsnap-erp_web", 3000, "/"),
+    await request("starsnap-erp_web", 3000, "/", "erp.starsnap.kr"),
     "StarSnap ERP",
     "ERP service root",
   );
   const erpHealth = parseJson(
-    await request("starsnap-erp_web", 3000, "/api/health"),
+    await request("starsnap-erp_web", 3000, "/api/health", "erp.starsnap.kr"),
     "ERP service health",
   );
   if (erpHealth.ok !== true) {

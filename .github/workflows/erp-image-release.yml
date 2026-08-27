@@ -67,7 +67,7 @@ jobs:
           platforms: linux/arm64
           build-args: SITE_ORIGIN=https://erp.starsnap.kr
           push: true
-          tags: ghcr.io/starsnap/starsnap-erp-web:release-${{ github.sha }}
+          tags: ghcr.io/starsnap/starsnap-website-erp-web:release-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -84,4 +84,4 @@ jobs:
           set -euo pipefail
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf '### ERP web image\n\n%s\n' \
-            "ghcr.io/starsnap/starsnap-erp-web@$DIGEST" >>"$GITHUB_STEP_SUMMARY"
+            "ghcr.io/starsnap/starsnap-website-erp-web@$DIGEST" >>"$GITHUB_STEP_SUMMARY"

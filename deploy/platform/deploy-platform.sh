@@ -244,6 +244,7 @@ case "$phase" in
   activate)
     test "${ALLOW_PLATFORM_ACTIVATION:-}" = "ACTIVATE-192.168.1.103"
     require_restored_data_marker
+    verify_images_on_manager
     deploy_stacks
     refresh_private_image_tasks
     wait_for_replicas starsnap-erp_postgres 1

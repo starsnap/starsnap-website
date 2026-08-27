@@ -93,6 +93,18 @@ jobs:
             exit 1
           fi
 
+      - name: Sign in to GHCR for private platform images
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' }}
+        shell: bash
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.PLATFORM_GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" \
+            | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
+
       - name: Provision versioned Swarm secrets
         if: ${{ inputs.phase == 'provision' }}
         shell: bash
@@ -160,6 +172,7 @@ jobs:
           set -euo pipefail
           expected="/tmp/starsnap-platform-docker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test "$DOCKER_CONFIG" = "$expected"
+          docker logout ghcr.io >/dev/null 2>&1 || true
           if [ -d "$DOCKER_CONFIG" ]; then
             find "$DOCKER_CONFIG" -depth -delete
           fi

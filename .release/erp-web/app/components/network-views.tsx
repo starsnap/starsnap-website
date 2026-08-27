@@ -303,7 +303,7 @@ export function NetworkDashboardSummary({ data, onNavigate }: Pick<NetworkViewPr
   const cards = [
     { label: partnerLabel, value: `${number.format(networkMetrics.activePartners)}곳`, detail: '현재 주문 가능한 거래 관계', icon: Handshake, module: 'partners' as ModuleId },
     ...(type === 'BRAND' ? [] : [{ label: '진행 학교 계약', value: `${number.format(networkMetrics.openBids)}건`, detail: '낙찰 또는 계약 진행 상태', icon: Gavel, module: 'bids' as ModuleId }]),
-    { label: '받은 발주', value: `${number.format(networkMetrics.incomingOrders)}건`, detail: '공급 처리가 필요한 주문', icon: ArrowDownLeft, module: 'channel-orders' as ModuleId },
+    ...(type === 'BIDDER' ? [] : [{ label: '받은 발주', value: `${number.format(networkMetrics.incomingOrders)}건`, detail: '공급 처리가 필요한 주문', icon: ArrowDownLeft, module: 'channel-orders' as ModuleId }]),
     ...(type === 'BRAND' ? [] : [{ label: '보낸 발주', value: `${number.format(networkMetrics.outgoingOrders)}건`, detail: '상위 거래처에 요청한 주문', icon: ArrowUpRight, module: 'channel-orders' as ModuleId }]),
   ];
   const flow = organizationFlow(type);
@@ -315,7 +315,7 @@ export function NetworkDashboardSummary({ data, onNavigate }: Pick<NetworkViewPr
         <h2 id="network-summary-title" className="text-lg font-extrabold">{organizationLabels[type]} 거래망 요약</h2>
         <p className="text-sm leading-6 text-[var(--ss-text-muted)]">회사 유형에 맞는 거래 관계와 주문 흐름만 표시합니다.</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-3 sm:grid-cols-2 ${type === 'BIDDER' ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
         {cards.map((card) => {
           const Icon = card.icon;
           return (

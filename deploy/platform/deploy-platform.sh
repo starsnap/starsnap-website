@@ -49,10 +49,10 @@ readonly private_image_services=(
 readonly manager_local_image_registry='starsnap.invalid'
 
 usage() {
-  echo "Usage: $0 preflight|stage|activate|diagnose|verify|stop-target" >&2
+  echo "Usage: $0 preflight|stage|activate|verify|stop-target" >&2
 }
 
-if [[ ! "$phase" =~ ^(preflight|stage|activate|diagnose|verify|stop-target)$ ]]; then
+if [[ ! "$phase" =~ ^(preflight|stage|activate|verify|stop-target)$ ]]; then
   usage
   exit 2
 fi
@@ -225,6 +225,7 @@ wait_for_replicas() {
       paused|rollback_paused|rollback_started|rollback_completed)
         echo "$service entered failure state: $update_state" >&2
         docker service ps --no-trunc "$service" >&2 || true
+        docker service logs --raw --tail 100 "$service" >&2 || true
         return 1
         ;;
     esac
@@ -235,6 +236,7 @@ wait_for_replicas() {
   done
   echo "Timed out waiting for $service=$expected/$expected" >&2
   docker service ps --no-trunc "$service" >&2 || true
+  docker service logs --raw --tail 100 "$service" >&2 || true
   return 1
 }
 
@@ -277,19 +279,6 @@ verify_direct_services() {
   test "$(awk 'NF {count++} END {print count + 0}' <<<"$website_container")" -eq 1
   docker exec --interactive "$website_container" \
     node --input-type=module <deploy/platform/verify-platform.mjs
-}
-
-diagnose_hub_services() {
-  local service
-  for service in starsnap-hub_postgres starsnap-hub_server; do
-    echo "::group::$service state"
-    docker service inspect --format \
-      'Image={{.Spec.TaskTemplate.ContainerSpec.Image}} Update={{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}none{{end}} Replicas={{.Spec.Mode.Replicated.Replicas}}' \
-      "$service" || true
-    docker service ps --no-trunc "$service" || true
-    docker service logs --raw --timestamps --tail 200 "$service" || true
-    echo '::endgroup::'
-  done
 }
 
 require_restored_data_marker() {
@@ -346,9 +335,6 @@ case "$phase" in
     verify_private_service_runtime
     verify_direct_services
     echo "Target services are healthy; Caddy has not been switched by this script."
-    ;;
-  diagnose)
-    diagnose_hub_services
     ;;
   verify)
     verify_direct_services

@@ -13,7 +13,6 @@ on:
           - stage
           - restore
           - activate
-          - diagnose
           - cleanup-transfer
           - switch-log
           - verify
@@ -126,7 +125,6 @@ jobs:
           inputs.phase == 'preflight' ||
           inputs.phase == 'stage' ||
           inputs.phase == 'activate' ||
-          inputs.phase == 'diagnose' ||
           inputs.phase == 'verify'
         shell: bash
         env:

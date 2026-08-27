@@ -102,7 +102,7 @@ services:
         - bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081'
       interval: 10s
       timeout: 5s
-      start_period: 40s
+      start_period: 180s
       retries: 8
     stop_grace_period: 30s
     deploy:

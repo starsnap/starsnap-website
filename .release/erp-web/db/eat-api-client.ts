@@ -100,9 +100,10 @@ export async function fetchEatBidPage(
   );
   try {
     const response = await (options.fetchImpl ?? fetch)(url, {
-      cache: 'no-store',
       headers: { Accept: 'application/xml, text/xml;q=0.9' },
-      redirect: 'error',
+      // workerd does not implement RequestInit.cache and rejects redirect="error".
+      // Manual redirects preserve the no-follow policy while remaining Worker-compatible.
+      redirect: 'manual',
       referrerPolicy: 'no-referrer',
       signal: controller.signal,
     });

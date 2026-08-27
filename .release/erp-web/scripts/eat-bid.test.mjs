@@ -181,7 +181,7 @@ test('normalizes raw and URL-encoded service keys exactly once', async () => {
   for (const serviceKey of [rawServiceKey, 'sample%2Bkey%2Fvalue%3D%3D']) {
     await fetchEatBidPage(query, {
       serviceKey,
-      fetchImpl: async (input) => {
+      fetchImpl: async (input, init) => {
         const url = new URL(String(input));
         assert.equal(url.searchParams.get('serviceKey'), rawServiceKey);
         assert.match(url.search, /serviceKey=sample%2Bkey%2Fvalue%3D%3D/);
@@ -191,6 +191,8 @@ test('normalizes raw and URL-encoded service keys exactly once', async () => {
         assert.equal(url.searchParams.get('useOrganNm'), '교육청');
         assert.equal(url.searchParams.get('pageNo'), '1');
         assert.equal(url.searchParams.get('numOfRows'), '20');
+        assert.equal(init.redirect, 'manual');
+        assert.equal(Object.hasOwn(init, 'cache'), false);
         return new Response(successXml, { status: 200 });
       },
     });

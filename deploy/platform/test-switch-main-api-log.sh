@@ -145,6 +145,9 @@ sleep() {
 
 export -f docker sleep fake_env_file fake_marker_file
 
+grep -Fq 'headers: { Host: "api.starsnap.kr" }' \
+  deploy/platform/switch-main-api-log.sh
+
 printf '%s\n' "$old_line" >"$(fake_env_file)"
 ALLOW_API_LOG_ROUTE=SWITCH-MAIN-API-LOG \
   bash deploy/platform/switch-main-api-log.sh switch >/dev/null

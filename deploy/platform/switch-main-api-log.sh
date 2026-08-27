@@ -85,7 +85,9 @@ wait_for_api() {
         && "$running_env_valid" == "true" \
         && "$running_line" == "$expected_line" ]] \
         && docker exec "$probe_container" node -e '
-          fetch("http://starsnap-main_api:8080/api/health")
+          fetch("http://starsnap-main_api:8080/api/health", {
+            headers: { Host: "api.starsnap.kr" },
+          })
             .then(async (response) => {
               const body = await response.json();
               process.exit(response.ok && body.status === "ok" ? 0 : 1);

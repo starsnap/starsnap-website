@@ -28,7 +28,11 @@ ENV NODE_ENV=production \
     WRANGLER_SEND_METRICS=false \
     WRANGLER_WRITE_LOGS=false
 
-RUN npm install --global wrangler@4.92.0 \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && test -r /etc/ssl/certs/ca-certificates.crt \
+    && npm install --global wrangler@4.92.0 \
     && mkdir -p /app/.wrangler \
     && chown -R node:node /app/.wrangler
 

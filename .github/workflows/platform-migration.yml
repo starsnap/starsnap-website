@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - provision
+          - diagnose-eat
           - deploy-erp
           - preflight
           - stage
@@ -39,7 +40,8 @@ jobs:
   migrate:
     if: >-
       github.repository == 'starsnap/starsnap-website' &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      inputs.phase != 'diagnose-eat'
     runs-on:
       group: starsnap-production
     environment: production
@@ -274,3 +276,80 @@ jobs:
           if [ -d "$DOCKER_CONFIG" ]; then
             find "$DOCKER_CONFIG" -depth -delete
           fi
+
+  diagnose_eat:
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.phase == 'diagnose-eat'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the credential-safe diagnostic
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: deploy/platform/eat-workerd-diagnostic-worker.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Exercise the exact eAT response path in workerd
+        shell: bash
+        env:
+          EAT_API_SERVICE_KEY: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
+        run: |
+          set -euo pipefail
+          test -n "$EAT_API_SERVICE_KEY"
+          diagnostic_dir="$RUNNER_TEMP/eat-workerd-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          case "$diagnostic_dir" in
+            "$RUNNER_TEMP"/eat-workerd-*) ;;
+            *) exit 1 ;;
+          esac
+          response_file="$diagnostic_dir/response.json"
+          log_file="$diagnostic_dir/wrangler.log"
+          mkdir -p "$diagnostic_dir"
+          chmod 700 "$diagnostic_dir"
+          cp deploy/platform/eat-workerd-diagnostic-worker.mjs "$diagnostic_dir/worker.mjs"
+          printf 'EAT_API_SERVICE_KEY=%s\n' "$EAT_API_SERVICE_KEY" >"$diagnostic_dir/.dev.vars"
+          chmod 600 "$diagnostic_dir/.dev.vars"
+          cd "$diagnostic_dir"
+
+          npx --yes wrangler@4.92.0 dev worker.mjs \
+            --local \
+            --ip 127.0.0.1 \
+            --port 8787 \
+            --log-level error \
+            --show-interactive-dev-session=false \
+            >"$log_file" 2>&1 &
+          worker_pid=$!
+          cleanup() {
+            kill "$worker_pid" 2>/dev/null || true
+            wait "$worker_pid" 2>/dev/null || true
+            if [ -d "$diagnostic_dir" ]; then
+              find "$diagnostic_dir" -depth -delete
+            fi
+          }
+          trap cleanup EXIT
+
+          http_code=''
+          for _ in $(seq 1 30); do
+            http_code="$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              http://127.0.0.1:8787/ || true)"
+            if [ "$http_code" != '000' ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$http_code" = '000' ] || [ ! -s "$response_file" ]; then
+            sed -E 's/[A-Za-z0-9%+\/=]{32,}/[redacted]/g' "$log_file" >&2
+            exit 1
+          fi
+          cat "$response_file"
+          node -e '
+            const fs = require("node:fs");
+            const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (!result.ok || result.stage !== "complete") process.exit(1);
+          ' "$response_file"

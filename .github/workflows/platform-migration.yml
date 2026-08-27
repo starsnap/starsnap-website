@@ -10,6 +10,7 @@ on:
         options:
           - provision
           - diagnose-eat
+          - diagnose-eat-parser
           - diagnose-eat-container
           - deploy-erp
           - preflight
@@ -43,6 +44,7 @@ jobs:
       github.repository == 'starsnap/starsnap-website' &&
       github.ref == 'refs/heads/main' &&
       inputs.phase != 'diagnose-eat' &&
+      inputs.phase != 'diagnose-eat-parser' &&
       inputs.phase != 'diagnose-eat-container'
     runs-on:
       group: starsnap-production
@@ -422,6 +424,160 @@ jobs:
           if [ -d "$diagnostic_dir" ]; then
             find "$diagnostic_dir" -depth -delete
           fi
+
+  diagnose_eat_parser:
+    if: >-
+      github.repository == 'starsnap/starsnap-website' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.phase == 'diagnose-eat-parser'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the trusted parser diagnostic
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/platform/eat-parser-workerd-diagnostic-worker.ts
+            deploy/platform/eat-parser-workerd-diagnostic-wrangler.jsonc
+          sparse-checkout-cone-mode: false
+
+      - name: Check out the exact ERP parser release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: 6ddc94bbfe66c9aa34bb411fb043d0747f1d9169
+          path: release-source
+          sparse-checkout: |
+            .release/erp-web/package.json
+            .release/erp-web/package-lock.json
+            .release/erp-web/db/eat-api-parser.ts
+            .release/erp-web/app/lib/eat-bid-types.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up the pinned Node.js runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: release-source/.release/erp-web/package-lock.json
+
+      - name: Install the exact parser release dependencies
+        working-directory: release-source/.release/erp-web
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Prepare the isolated parser diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          parser_root="$GITHUB_WORKSPACE/release-source/.release/erp-web"
+          test -f "$parser_root/db/eat-api-parser.ts"
+          cp deploy/platform/eat-parser-workerd-diagnostic-worker.ts \
+            "$parser_root/eat-parser-workerd-diagnostic-worker.ts"
+          cp deploy/platform/eat-parser-workerd-diagnostic-wrangler.jsonc \
+            "$parser_root/eat-parser-workerd-diagnostic-wrangler.jsonc"
+          printf 'PARSER_DIAGNOSTIC_ROOT=%s\n' "$parser_root" >>"$GITHUB_ENV"
+
+      - name: Exercise the exact production parser in workerd
+        shell: bash
+        env:
+          EAT_API_SERVICE_KEY: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
+        run: |
+          set -euo pipefail
+          parser_root="${PARSER_DIAGNOSTIC_ROOT:-}"
+          if [ "$parser_root" != "$GITHUB_WORKSPACE/release-source/.release/erp-web" ]; then
+            exit 1
+          fi
+          worker_pid=''
+          cleanup() {
+            if [ -n "$worker_pid" ]; then
+              kill "$worker_pid" 2>/dev/null || true
+              wait "$worker_pid" 2>/dev/null || true
+            fi
+            for artifact in \
+              "$parser_root/.dev.vars" \
+              "$parser_root/diagnostic-response.json" \
+              "$parser_root/diagnostic-wrangler.log"; do
+              if [ -f "$artifact" ]; then
+                rm -f -- "$artifact"
+              fi
+            done
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          test -n "$EAT_API_SERVICE_KEY"
+          umask 077
+          printf 'EAT_API_SERVICE_KEY=%s\n' "$EAT_API_SERVICE_KEY" >"$parser_root/.dev.vars"
+          unset EAT_API_SERVICE_KEY
+          cd "$parser_root"
+
+          ./node_modules/.bin/wrangler dev \
+            --config eat-parser-workerd-diagnostic-wrangler.jsonc \
+            --local \
+            --ip 127.0.0.1 \
+            --port 8787 \
+            --log-level error \
+            --show-interactive-dev-session=false \
+            >diagnostic-wrangler.log 2>&1 &
+          worker_pid=$!
+
+          http_code=''
+          for _ in $(seq 1 30); do
+            http_code="$(curl --silent --show-error \
+              --output diagnostic-response.json \
+              --write-out '%{http_code}' \
+              http://127.0.0.1:8787/ || true)"
+            if [ "$http_code" != '000' ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$http_code" = '000' ] || [ ! -s diagnostic-response.json ]; then
+            sed -E 's/[A-Za-z0-9%+\/=]{32,}/[redacted]/g' diagnostic-wrangler.log >&2
+            exit 1
+          fi
+          cat diagnostic-response.json
+          node -e '
+            const fs = require("node:fs");
+            const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (
+              !result.ok ||
+              result.stage !== "complete" ||
+              result.total < 1 ||
+              result.page !== 1 ||
+              result.pageSize !== 20 ||
+              result.itemCount !== Math.min(20, result.total)
+            ) process.exit(1);
+          ' diagnostic-response.json
+
+      - name: Remove parser diagnostic artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          parser_root="${PARSER_DIAGNOSTIC_ROOT:-}"
+          if [ -z "$parser_root" ]; then
+            exit 0
+          fi
+          if [ "$parser_root" != "$GITHUB_WORKSPACE/release-source/.release/erp-web" ]; then
+            exit 1
+          fi
+          for artifact in \
+            "$parser_root/.dev.vars" \
+            "$parser_root/diagnostic-response.json" \
+            "$parser_root/diagnostic-wrangler.log" \
+            "$parser_root/eat-parser-workerd-diagnostic-worker.ts" \
+            "$parser_root/eat-parser-workerd-diagnostic-wrangler.jsonc"; do
+            if [ -f "$artifact" ]; then
+              rm -f -- "$artifact"
+            fi
+          done
 
   diagnose_eat_container:
     if: >-

@@ -177,18 +177,26 @@ jobs:
               --format 'ProbeContainer={{.Id}} Status={{.State.Status}} Running={{.State.Running}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
               "$probe_container"
             docker exec "$probe_container" node -e '
-              fetch("http://starsnap-main_api:8080/api/health", {
+              const http = require("node:http");
+              const request = http.get({
+                hostname: "starsnap-main_api",
+                port: 8080,
+                path: "/api/health",
                 headers: { Host: "api.starsnap.kr" },
-              })
-                .then(async (response) => {
-                  const body = await response.text();
-                  console.log(`ApiProbeStatus=${response.status} ApiProbeBody=${body}`);
-                  process.exit(response.ok ? 0 : 1);
-                })
-                .catch((error) => {
-                  console.error(`ApiProbeError=${error.message}`);
-                  process.exit(1);
+              }, (response) => {
+                let body = "";
+                response.setEncoding("utf8");
+                response.on("data", (chunk) => { body += chunk; });
+                response.on("end", () => {
+                  console.log(`ApiProbeStatus=${response.statusCode} ApiProbeBody=${body}`);
+                  process.exit(response.statusCode >= 200 && response.statusCode < 300 ? 0 : 1);
                 });
+              });
+              request.setTimeout(5000, () => request.destroy(new Error("timeout")));
+              request.on("error", (error) => {
+                console.error(`ApiProbeError=${error.message}`);
+                process.exit(1);
+              });
             '
           done <<<"$probe_containers"
           if docker config inspect "$marker_name" >/dev/null 2>&1; then

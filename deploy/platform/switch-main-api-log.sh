@@ -85,14 +85,27 @@ wait_for_api() {
         && "$running_env_valid" == "true" \
         && "$running_line" == "$expected_line" ]] \
         && docker exec "$probe_container" node -e '
-          fetch("http://starsnap-main_api:8080/api/health", {
+          const http = require("node:http");
+          const request = http.get({
+            hostname: "starsnap-main_api",
+            port: 8080,
+            path: "/api/health",
             headers: { Host: "api.starsnap.kr" },
-          })
-            .then(async (response) => {
-              const body = await response.json();
-              process.exit(response.ok && body.status === "ok" ? 0 : 1);
-            })
-            .catch(() => process.exit(1));
+          }, (response) => {
+            let body = "";
+            response.setEncoding("utf8");
+            response.on("data", (chunk) => { body += chunk; });
+            response.on("end", () => {
+              let parsed;
+              try { parsed = JSON.parse(body); } catch { parsed = null; }
+              const ok = response.statusCode >= 200
+                && response.statusCode < 300
+                && parsed?.status === "ok";
+              process.exit(ok ? 0 : 1);
+            });
+          });
+          request.setTimeout(5000, () => request.destroy(new Error("timeout")));
+          request.on("error", () => process.exit(1));
         '; then
         if [[ "$update_state" == "completed" ]]; then
           return 0

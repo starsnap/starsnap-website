@@ -19,6 +19,7 @@ import {
   validateEatBidQuery,
   type EatBidQueryFieldErrors,
 } from '../lib/eat-bid-validation';
+import { formatEatDate } from '../lib/eat-date-format';
 import type { TenantCode } from '../lib/erp-types';
 
 const pageSize = 20;
@@ -153,12 +154,6 @@ function sameSearchCriteria(left: EatBidQuery, right: EatBidQuery) {
     && left.pageSize === right.pageSize;
 }
 
-function displayDate(value: string) {
-  const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
-  if (compact) return `${compact[1]}.${compact[2]}.${compact[3]}`;
-  return value || '-';
-}
-
 function displayDateTime(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf())) return value;
@@ -203,9 +198,9 @@ function AnnouncementCard({ item }: { item: EatBidAnnouncement }) {
       </div>
 
       <dl className="mt-4 grid gap-3 border-y border-[var(--ss-border)] py-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">공고일</dt><dd className="mt-1 font-bold">{displayDate(item.announcementDate)}</dd></div>
-        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">입찰 기간</dt><dd className="mt-1 font-bold">{displayDate(item.bidStartDate)} ~ {displayDate(item.bidEndDate)}</dd></div>
-        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">납품 기간</dt><dd className="mt-1 font-bold">{displayDate(item.deliveryStartDate)} ~ {displayDate(item.deliveryEndDate)}</dd></div>
+        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">공고일</dt><dd className="mt-1 font-bold">{formatEatDate(item.announcementDate)}</dd></div>
+        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">입찰 기간</dt><dd className="mt-1 font-bold">{formatEatDate(item.bidStartDate)} ~ {formatEatDate(item.bidEndDate)}</dd></div>
+        <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">납품 기간</dt><dd className="mt-1 font-bold">{formatEatDate(item.deliveryStartDate)} ~ {formatEatDate(item.deliveryEndDate)}</dd></div>
         <div><dt className="text-xs font-semibold text-[var(--ss-text-muted)]">기초금액</dt><dd className="mt-1 font-bold">{displayPrice(item.basePrice)}</dd></div>
       </dl>
       {item.deliveryAddress ? <p className="mt-3 break-words text-xs leading-5 text-[var(--ss-text-subtle)]">납품장소: {item.deliveryAddress}</p> : null}

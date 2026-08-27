@@ -9,6 +9,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 let viteServer;
 let EatApiError;
 let fetchEatBidPage;
+let formatEatDate;
 let lookupEatBids;
 let parseEatBidQuery;
 let parseEatBidXml;
@@ -36,6 +37,7 @@ before(async () => {
 
   ({ EatApiError, parseEatBidXml } = await viteServer.ssrLoadModule('/db/eat-api-parser.ts'));
   ({ fetchEatBidPage } = await viteServer.ssrLoadModule('/db/eat-api-client.ts'));
+  ({ formatEatDate } = await viteServer.ssrLoadModule('/app/lib/eat-date-format.ts'));
   ({ parseEatBidQuery } = await viteServer.ssrLoadModule('/app/lib/eat-bid-validation.ts'));
   ({ lookupEatBids } = await viteServer.ssrLoadModule('/db/eat-bid-service.ts'));
 });
@@ -72,6 +74,24 @@ const successXml = `<?xml version="1.0" encoding="UTF-8"?>
     <numOfRows>0020</numOfRows><pageNo>0001</pageNo><totalCount>0002</totalCount>
   </body>
 </response>`;
+
+test('formats eAT date variants as YYYY-MM-DD without changing descriptive text', () => {
+  assert.equal(formatEatDate('20260731'), '2026-07-31');
+  assert.equal(formatEatDate('2026.08.20'), '2026-08-20');
+  assert.equal(formatEatDate('2026-07-31 15:50:00.0'), '2026-07-31');
+  assert.equal(formatEatDate('2026-07-31T15:50:00+09:00'), '2026-07-31');
+  assert.equal(formatEatDate('2024-02-29'), '2024-02-29');
+  assert.equal(formatEatDate('2026-02-29'), '2026-02-29');
+  assert.equal(formatEatDate('2026-04-31'), '2026-04-31');
+  assert.equal(formatEatDate('20260229'), '20260229');
+  assert.equal(formatEatDate('2026.04.31'), '2026.04.31');
+  assert.equal(formatEatDate('20260027'), '20260027');
+  assert.equal(formatEatDate('2026.13.27'), '2026.13.27');
+  assert.equal(formatEatDate('2026-08-27 예정'), '2026-08-27 예정');
+  assert.equal(formatEatDate('현품설명서에 따름'), '현품설명서에 따름');
+  assert.equal(formatEatDate(''), '-');
+  assert.equal(formatEatDate('   '), '-');
+});
 
 test('parses repeated eAT announcement and item wrappers without losing leading zeroes', () => {
   const result = parseEatBidXml(successXml);

@@ -106,7 +106,7 @@ jobs:
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.PLATFORM_GHCR_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.PLATFORM_GHCR_TOKEN || github.token }}
         run: |
           set -euo pipefail
           test -n "$GHCR_TOKEN"

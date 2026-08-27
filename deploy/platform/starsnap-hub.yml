@@ -113,7 +113,7 @@ services:
           - node.labels.starsnap.actions-runner == true
       update_config:
         parallelism: 1
-        order: start-first
+        order: stop-first
         failure_action: rollback
         monitor: 90s
       rollback_config:
@@ -150,6 +150,10 @@ services:
     stop_grace_period: 20s
     deploy:
       replicas: ${HUB_WEB_REPLICAS:-1}
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.starsnap.actions-runner == true
       update_config:
         parallelism: 1
         order: start-first

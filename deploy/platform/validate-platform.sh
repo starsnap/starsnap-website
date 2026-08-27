@@ -91,12 +91,22 @@ if grep -Fq '192.168.1.2' \
 fi
 
 grep -Fq 'starsnap-main_starsnap-postgres:5432' deploy/platform/starsnap-admin.yml
-grep -Fq 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-hub.yml
-grep -Fq 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-erp.yml
+test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-erp.yml)" -eq 6
+test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-hub.yml)" -eq 3
+test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-admin.yml)" -eq 2
+test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-sns.yml)" -eq 1
+test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-erp.yml)" -eq 6
+test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-hub.yml)" -eq 3
+test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-admin.yml)" -eq 2
+test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-sns.yml)" -eq 1
 grep -Fq 'starsnap-main_api:8080' deploy/platform/build-platform-images.ps1
 grep -Fq 'sourceImageId' deploy/platform/build-platform-images.ps1
 grep -Fq 'wait_for_completed_service starsnap-erp_ollama-model' deploy/platform/deploy-platform.sh
-grep -Fq "docker service update --detach=true --with-registry-auth --image \"\$image\" --force" deploy/platform/deploy-platform.sh
+grep -Fq "docker image inspect --format '{{.Os}}'" deploy/platform/deploy-platform.sh
+grep -Fq "docker tag \"\$image\" \"\$local_image\"" deploy/platform/deploy-platform.sh
+grep -Fq "manager_local_image_registry='starsnap.invalid'" deploy/platform/deploy-platform.sh
+grep -Fq "docker service update --detach=true --no-resolve-image --image \"\$local_image\" --force" deploy/platform/deploy-platform.sh
+grep -Fq 'verify_private_service_runtime' deploy/platform/deploy-platform.sh
 grep -Fq 'Snapshot manifest and database dump hashes verified.' deploy/platform/restore-platform-data.sh
 
 echo "Platform stack configuration passed static validation."

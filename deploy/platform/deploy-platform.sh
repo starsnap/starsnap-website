@@ -35,6 +35,18 @@ readonly image_variables=(
   ERP_SMTP_MAILER_IMAGE
   ERP_EMBEDDING_WORKER_IMAGE
 )
+readonly private_image_services=(
+  'starsnap-erp_smtp-mailer|ERP_SMTP_MAILER_IMAGE'
+  'starsnap-erp_web|ERP_WEB_IMAGE'
+  'starsnap-erp_embedding-worker|ERP_EMBEDDING_WORKER_IMAGE'
+  'starsnap-hub_server|HUB_SERVER_IMAGE'
+  'starsnap-hub_web|HUB_WEB_IMAGE'
+  'starsnap-admin_server|ADMIN_SERVER_IMAGE'
+  'starsnap-admin_web|ADMIN_WEB_IMAGE'
+  'starsnap-sns_web|SNS_WEB_IMAGE'
+)
+# This registry hostname is intentionally non-resolvable so a missing local tag fails closed.
+readonly manager_local_image_registry='starsnap.invalid'
 
 usage() {
   echo "Usage: $0 preflight|stage|activate|verify|stop-target" >&2
@@ -46,7 +58,12 @@ if [[ ! "$phase" =~ ^(preflight|stage|activate|verify|stop-target)$ ]]; then
 fi
 
 require_manager() {
-  local current_node_id labeled_nodes
+  local current_node_id labeled_nodes server_api_version service_update_help
+  service_update_help="$(docker service update --help)"
+  grep -Fq -- '--no-resolve-image' <<<"$service_update_help"
+  server_api_version="$(docker version --format '{{.Server.APIVersion}}')"
+  awk -F. '($1 > 1) || ($1 == 1 && $2 >= 30) { ok = 1 } END { exit ok ? 0 : 1 }' \
+    <<<"$server_api_version"
   test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
   current_node_id="$(docker info --format '{{.Swarm.NodeID}}')"
   test -n "$current_node_id"
@@ -76,12 +93,17 @@ require_dependencies() {
 }
 
 verify_images_on_manager() {
-  local variable image architecture
+  local variable image architecture operating_system
   for variable in "${image_variables[@]}"; do
     image="${!variable}"
     echo "Verifying $variable image on the Swarm manager."
     docker pull "$image" >/dev/null
     architecture="$(docker image inspect --format '{{.Architecture}}' "$image")"
+    operating_system="$(docker image inspect --format '{{.Os}}' "$image")"
+    if [[ "$operating_system" != "linux" ]]; then
+      echo "$variable resolved to unsupported operating system: $operating_system" >&2
+      return 1
+    fi
     case "$architecture" in
       arm64|aarch64) ;;
       *) echo "$variable resolved to unsupported architecture: $architecture" >&2; return 1 ;;
@@ -119,29 +141,75 @@ deploy_stacks() {
     --compose-file deploy/platform/starsnap-sns.yml starsnap-sns
 }
 
-refresh_private_image_tasks() {
-  local entry service variable image
-  local -a services=(
-    'starsnap-erp_smtp-mailer|ERP_SMTP_MAILER_IMAGE'
-    'starsnap-erp_web|ERP_WEB_IMAGE'
-    'starsnap-erp_embedding-worker|ERP_EMBEDDING_WORKER_IMAGE'
-    'starsnap-hub_server|HUB_SERVER_IMAGE'
-    'starsnap-hub_web|HUB_WEB_IMAGE'
-    'starsnap-admin_server|ADMIN_SERVER_IMAGE'
-    'starsnap-admin_web|ADMIN_WEB_IMAGE'
-    'starsnap-sns_web|SNS_WEB_IMAGE'
-  )
+manager_local_image_reference() {
+  local service="$1" image="$2" digest local_service
+  digest="${image##*@sha256:}"
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "$image did not contain the verified sha256 digest." >&2
+    return 1
+  fi
+  local_service="${service//_/-}"
+  printf '%s/starsnap-platform-local/%s:sha-%s\n' \
+    "$manager_local_image_registry" "$local_service" "$digest"
+}
 
-  for entry in "${services[@]}"; do
+refresh_private_image_tasks() {
+  local entry service variable image local_image source_id local_id
+
+  for entry in "${private_image_services[@]}"; do
     IFS='|' read -r service variable <<<"$entry"
     image="${!variable}"
-    echo "Refreshing the authenticated private-image task for $service."
-    if ! docker service update --detach=true --with-registry-auth --image "$image" --force "$service" >/dev/null; then
+    local_image="$(manager_local_image_reference "$service" "$image")"
+    echo "Tagging the verified $variable image locally for $service."
+    docker tag "$image" "$local_image"
+    source_id="$(docker image inspect --format '{{.Id}}' "$image")"
+    local_id="$(docker image inspect --format '{{.Id}}' "$local_image")"
+    test -n "$source_id"
+    test "$local_id" = "$source_id"
+
+    echo "Refreshing $service from the verified manager-local image."
+    if ! docker service update --detach=true --no-resolve-image --image "$local_image" --force "$service" >/dev/null; then
       echo "Failed to refresh $service; reporting task state and recent logs." >&2
       docker service ps --no-trunc "$service" >&2 || true
       docker service logs --raw --tail 100 "$service" >&2 || true
       return 1
     fi
+  done
+}
+
+verify_private_service_placements() {
+  local entry service constraints
+  for entry in "${private_image_services[@]}"; do
+    service="${entry%%|*}"
+    constraints="$(docker service inspect \
+      --format '{{range .Spec.TaskTemplate.Placement.Constraints}}{{println .}}{{end}}' \
+      "$service")"
+    grep -Fxq 'node.role == manager' <<<"$constraints"
+    grep -Fxq "node.labels.$manager_label == true" <<<"$constraints"
+  done
+}
+
+verify_private_service_runtime() {
+  local entry service variable image local_image spec_image container_ids container_id
+  local source_id container_image_id
+  for entry in "${private_image_services[@]}"; do
+    IFS='|' read -r service variable <<<"$entry"
+    image="${!variable}"
+    local_image="$(manager_local_image_reference "$service" "$image")"
+    spec_image="$(docker service inspect \
+      --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$service")"
+    test "$spec_image" = "$local_image"
+
+    container_ids="$(docker ps \
+      --filter "label=com.docker.swarm.service.name=$service" \
+      --filter status=running \
+      --format '{{.ID}}')"
+    test "$(awk 'NF { count++ } END { print count + 0 }' <<<"$container_ids")" -eq 1
+    container_id="$(awk 'NF { print; exit }' <<<"$container_ids")"
+    source_id="$(docker image inspect --format '{{.Id}}' "$image")"
+    container_image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+    test -n "$source_id"
+    test "$container_image_id" = "$source_id"
   done
 }
 
@@ -248,6 +316,7 @@ case "$phase" in
     require_restored_data_marker
     verify_images_on_manager
     deploy_stacks
+    verify_private_service_placements
     refresh_private_image_tasks
     wait_for_replicas starsnap-erp_postgres 1
     wait_for_replicas starsnap-erp_ollama 1
@@ -261,6 +330,7 @@ case "$phase" in
     wait_for_replicas starsnap-admin_server 1
     wait_for_replicas starsnap-admin_web 1
     wait_for_replicas starsnap-sns_web 1
+    verify_private_service_runtime
     verify_direct_services
     echo "Target services are healthy; Caddy has not been switched by this script."
     ;;

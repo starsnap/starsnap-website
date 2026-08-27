@@ -14,6 +14,10 @@ services:
     stop_grace_period: 20s
     deploy:
       replicas: ${SNS_WEB_REPLICAS:-1}
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.starsnap.actions-runner == true
       update_config:
         parallelism: 1
         order: start-first

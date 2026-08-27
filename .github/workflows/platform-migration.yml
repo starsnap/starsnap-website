@@ -14,6 +14,7 @@ on:
           - restore
           - activate
           - cleanup-transfer
+          - inspect-log
           - switch-log
           - verify
           - stop-target
@@ -138,6 +139,37 @@ jobs:
         env:
           ALLOW_API_LOG_ROUTE: ${{ inputs.confirmation }}
         run: bash deploy/platform/switch-main-api-log.sh switch
+
+      - name: Inspect SNS API logging rollout state
+        if: ${{ inputs.phase == 'inspect-log' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_service=starsnap-main_api
+          marker_name=starsnap-main-api-log-route-pre-20260827
+          docker service inspect \
+            --format 'Version={{.Version.Index}} UpdateStatus={{json .UpdateStatus}} UpdateConfig={{json .Spec.UpdateConfig}} RollbackConfig={{json .Spec.RollbackConfig}}' \
+            "$api_service"
+          docker service ps --no-trunc "$api_service"
+          api_container="$(docker ps \
+            --filter "label=com.docker.swarm.service.name=$api_service" \
+            --filter status=running \
+            --format '{{.ID}}' \
+            | awk 'NF {id=$0; count++} END {if (count == 1) print id; else exit 1}')"
+          docker inspect \
+            --format 'ContainerStatus={{.State.Status}} Running={{.State.Running}} StartedAt={{.State.StartedAt}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+            "$api_container"
+          docker inspect \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            "$api_container" \
+            | awk -F= '$1 == "SERVER_LOG_BASE_URL" {print "LogRoute=" $0; count++} END {if (count == 0) print "LogRouteAbsent=true"; if (count > 1) exit 2}'
+          if docker config inspect "$marker_name" >/dev/null 2>&1; then
+            docker config inspect \
+              --format 'RollbackMarkerPresent=true PreviousPresent={{index .Spec.Labels "com.starsnap.previous-present"}} PreviousURL={{index .Spec.Labels "com.starsnap.previous-url"}}' \
+              "$marker_name"
+          else
+            echo 'RollbackMarkerPresent=false'
+          fi
 
       - name: Restore SNS API logging before stopping target
         if: ${{ inputs.phase == 'stop-target' }}

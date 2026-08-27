@@ -84,7 +84,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
-          test "$(docker info --format '{{.Name}}')" = "master.hamtory.com"
+          node_address="$(docker node inspect self --format '{{.Status.Addr}}')"
+          if [ "$node_address" != "192.168.1.103" ]; then
+            echo "Expected Swarm manager address 192.168.1.103, got $node_address" >&2
+            exit 1
+          fi
 
       - name: Sign in to GHCR
         if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' }}

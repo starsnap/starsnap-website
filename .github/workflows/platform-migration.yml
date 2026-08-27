@@ -440,27 +440,8 @@ jobs:
           EAT_API_SERVICE_KEY: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
         run: |
           set -euo pipefail
-          diagnostic_dir="$RUNNER_TEMP/eat-container-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          case "$diagnostic_dir" in
-            "$RUNNER_TEMP"/eat-container-*) ;;
-            *) exit 1 ;;
-          esac
-          mkdir -p "$diagnostic_dir"
-          chmod 700 "$diagnostic_dir"
-          key_file="$diagnostic_dir/service-key"
-          cleanup() {
-            if [ -d "$diagnostic_dir" ]; then
-              find "$diagnostic_dir" -depth -delete
-            fi
-          }
-          trap cleanup EXIT
-          trap 'exit 129' HUP
-          trap 'exit 130' INT
-          trap 'exit 143' TERM
-
           test -n "$EAT_API_SERVICE_KEY"
-          umask 077
-          printf '%s' "$EAT_API_SERVICE_KEY" >"$key_file"
+          service_key="$EAT_API_SERVICE_KEY"
           unset EAT_API_SERVICE_KEY
 
           mapfile -t container_ids < <(
@@ -473,7 +454,7 @@ jobs:
             exit 1
           fi
 
-          docker exec -i "${container_ids[0]}" node -e '
+          printf '%s' "$service_key" | docker exec -i "${container_ids[0]}" node -e '
             const fs = require("node:fs");
             const endpoint = "https://apis.data.go.kr/B552845/eaTPubServiceN3/eaTBidListN3";
             const maximumResponseBytes = 2 * 1024 * 1024;
@@ -576,4 +557,4 @@ jobs:
                 clearTimeout(timeout);
               }
             })();
-          ' <"$key_file"
+          '

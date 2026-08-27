@@ -271,13 +271,13 @@ wait_for_completed_service() {
 }
 
 verify_direct_services() {
-  local website_container
-  website_container="$(docker ps \
-    --filter label=com.docker.swarm.service.name=starsnap-company_website \
+  local probe_container
+  probe_container="$(docker ps \
+    --filter label=com.docker.swarm.service.name=starsnap-sns_web \
     --filter status=running \
     --format '{{.ID}}')"
-  test "$(awk 'NF {count++} END {print count + 0}' <<<"$website_container")" -eq 1
-  docker exec --interactive "$website_container" \
+  test "$(awk 'NF {count++} END {print count + 0}' <<<"$probe_container")" -eq 1
+  docker exec --interactive "$probe_container" \
     node --input-type=module <deploy/platform/verify-platform.mjs
 }
 

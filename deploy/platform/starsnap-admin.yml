@@ -74,11 +74,11 @@ services:
         parallelism: 1
         order: start-first
         failure_action: rollback
-        monitor: 90s
+        monitor: 240s
       rollback_config:
         parallelism: 1
         order: stop-first
-        monitor: 90s
+        monitor: 240s
       restart_policy:
         condition: on-failure
         delay: 5s

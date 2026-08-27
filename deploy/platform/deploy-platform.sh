@@ -120,21 +120,23 @@ deploy_stacks() {
 }
 
 refresh_private_image_tasks() {
-  local service
+  local entry service variable image
   local -a services=(
-    starsnap-erp_smtp-mailer
-    starsnap-erp_web
-    starsnap-erp_embedding-worker
-    starsnap-hub_server
-    starsnap-hub_web
-    starsnap-admin_server
-    starsnap-admin_web
-    starsnap-sns_web
+    'starsnap-erp_smtp-mailer|ERP_SMTP_MAILER_IMAGE'
+    'starsnap-erp_web|ERP_WEB_IMAGE'
+    'starsnap-erp_embedding-worker|ERP_EMBEDDING_WORKER_IMAGE'
+    'starsnap-hub_server|HUB_SERVER_IMAGE'
+    'starsnap-hub_web|HUB_WEB_IMAGE'
+    'starsnap-admin_server|ADMIN_SERVER_IMAGE'
+    'starsnap-admin_web|ADMIN_WEB_IMAGE'
+    'starsnap-sns_web|SNS_WEB_IMAGE'
   )
 
-  for service in "${services[@]}"; do
+  for entry in "${services[@]}"; do
+    IFS='|' read -r service variable <<<"$entry"
+    image="${!variable}"
     echo "Refreshing the authenticated private-image task for $service."
-    if ! docker service update --detach=true --with-registry-auth --force "$service" >/dev/null; then
+    if ! docker service update --detach=true --with-registry-auth --image "$image" --force "$service" >/dev/null; then
       echo "Failed to refresh $service; reporting task state and recent logs." >&2
       docker service ps --no-trunc "$service" >&2 || true
       docker service logs --raw --tail 100 "$service" >&2 || true

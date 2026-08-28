@@ -12,9 +12,17 @@ The deploy job is disabled until all of the following exist:
   `starsnap-production` runner group. The deploy job schedules by this group
   alone; the `starsnap-swarm` custom runner label is operational inventory
   metadata and is not part of `runs-on` matching.
-- The runner group's repository access must explicitly include the public
-  `starsnap/starsnap-website` repository. Its separate workflow allowlist must
-  contain only `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`.
+- The runner group's repository access must explicitly include only the StarSnap
+  repositories that own a production service. Its workflow allowlist must pin
+  the following repository-owned workflows to their protected default branch:
+  - `starsnap/starsnap-website/.github/workflows/container.yml@refs/heads/main`
+  - `starsnap/starsnap-sns-web/.github/workflows/container.yml@refs/heads/main`
+  - `starsnap/starsnap-sns-backend/.github/workflows/container.yml@refs/heads/main`
+  - `starsnap/starsnap-admin-web/.github/workflows/container.yml@refs/heads/master`
+  - `starsnap/starsnap-admin-server/.github/workflows/container.yml@refs/heads/master`
+  - `starsnap/starsnap-log-web/.github/workflows/container.yml@refs/heads/master`
+  - `starsnap/starsnap-log-server/.github/workflows/container.yml@refs/heads/master`
+  - `starsnap/starsnap-erp-web/.github/workflows/container.yml@refs/heads/main`
 - A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
 - A GitHub environment named `production` that permits only `main` and follows
   the organization's chosen reviewer and administrator-bypass policy.
@@ -50,14 +58,20 @@ digest before replacing it, since the runner is configured with automatic
 updates disabled.
 
 The deploy runner has Swarm-manager-level authority. Keep its runner group
-restricted to the exact workflow above, never add pull-request or fork triggers
-to the deploy job, and protect workflow changes on `main` before granting
-additional collaborators write access. Keep the group limited to the intended
+restricted to the exact workflows above, never add pull-request or fork triggers
+to a deploy job, and protect workflow changes on every listed default branch
+before granting additional collaborators write access. Keep the group limited to the intended
 ARM64 manager runner; group membership, not a combined custom-label match, is the
 GitHub Actions deployment routing boundary. The separate Docker node label
 `starsnap.actions-runner=true` is the Swarm placement boundary for both company
 services. The deployment preflight requires the current manager to carry that
 label and requires it to be the only labeled node in the Swarm.
+
+Application repositories build and deploy only their own service. They share the
+single production runner and `/runner-state/starsnap-production-deploy.lock`, but
+they do not check out, build, or mutate another application's repository or
+Swarm service. This repository owns only the company website and Caddy edge
+services.
 
 ## Deployment guarantees
 

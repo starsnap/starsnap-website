@@ -231,6 +231,13 @@ bash() {
 wget() { printf '{"status":"UP"}\n'; }
 curl() {
   grep -Fq -- '--noproxy *' <<<"$*"
+  grep -Fq -- '--connect-timeout 10' <<<"$*"
+  grep -Fq -- '--max-time 30' <<<"$*"
+  if [[ "$*" == *'actuator/health'* ]]; then
+    grep -Fq -- 'http://192.168.1.103:8081/actuator/health' <<<"$*"
+    printf '{"status":"UP"}\n'
+    return 0
+  fi
   grep -Fq -- '--resolve log.starsnap.kr:443:192.168.1.103' <<<"$*"
   grep -Fq -- 'https://log.starsnap.kr/' <<<"$*"
   if [[ "$(read_state route-result)" == pass ]]; then

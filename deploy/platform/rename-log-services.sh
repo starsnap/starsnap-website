@@ -175,18 +175,31 @@ ensure_caddy_config() {
 }
 
 verify_from_caddy() {
-  local container
+  local container web_body health_body
   container="$(single_running_container "$caddy_service")"
-  docker exec "$container" wget --quiet --output-document=- \
-    "http://$target_web:5173/" | grep -Fq '<title>StarSnap Log Dashboard</title>'
-  docker exec "$container" wget --quiet --output-document=- \
-    "http://$target_server:8081/actuator/health" | grep -Fq '"status":"UP"'
+  web_body="$(docker exec "$container" wget --quiet --output-document=- \
+    "http://$target_web:5173/")"
+  grep -Fq '<title>StarSnap Log Dashboard</title>' <<<"$web_body"
+  health_body="$(docker exec "$container" wget --quiet --output-document=- \
+    "http://$target_server:8081/actuator/health")"
+  grep -Fq '"status":"UP"' <<<"$health_body"
 }
 
 verify_caddy_route() {
-  curl --silent --show-error --fail --insecure --noproxy '*' \
+  local dashboard_body
+  dashboard_body="$(curl --silent --show-error --fail --insecure --noproxy '*' \
+    --connect-timeout 10 --max-time 30 \
     --resolve "log.starsnap.kr:443:$manager_address" \
-    'https://log.starsnap.kr/' | grep -Fq '<title>StarSnap Log Dashboard</title>'
+    'https://log.starsnap.kr/')"
+  grep -Fq '<title>StarSnap Log Dashboard</title>' <<<"$dashboard_body"
+}
+
+verify_manager_health() {
+  local health_body
+  health_body="$(curl --silent --show-error --fail --noproxy '*' \
+    --connect-timeout 10 --max-time 30 \
+    "http://$manager_address:8081/actuator/health")"
+  grep -Fq '"status":"UP"' <<<"$health_body"
 }
 
 ensure_target_services() {
@@ -375,8 +388,7 @@ wait_for_service "$target_server" server completed
 wait_for_service "$target_web" web completed
 verify_from_caddy
 verify_caddy_route
-wget --quiet --output-document=- "http://$manager_address:8081/actuator/health" \
-  | grep -Fq '"status":"UP"'
+verify_manager_health
 
 migration_complete=1
 trap - ERR HUP INT TERM

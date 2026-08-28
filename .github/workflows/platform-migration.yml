@@ -126,7 +126,7 @@ jobs:
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ github.token }}
+          GHCR_TOKEN: ${{ secrets.HUB_RELEASE_GHCR_TOKEN }}
         run: |
           set -euo pipefail
           printf '%s' "$GHCR_TOKEN" \

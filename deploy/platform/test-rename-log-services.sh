@@ -202,7 +202,17 @@ docker() {
         return 0
       fi
       ;;
-    pull:*|run:*)
+    pull:*)
+      ;;
+    run:*)
+      if [[ "$*" == *'actuator/health'* ]]; then
+        grep -Fq -- '--network host' <<<"$*"
+        grep -Fq -- '--entrypoint wget' <<<"$*"
+        grep -Fq -- '--timeout=30 --tries=1' <<<"$*"
+        grep -Fq -- 'http://127.0.0.1:8081/actuator/health' <<<"$*"
+        if [[ "$(read_state manager-health-result)" != pass ]]; then return 1; fi
+        printf '{"status":"UP"}\n'
+      fi
       ;;
     config:ls)
       if [[ "$(read_state config-exists)" = 1 ]]; then printf 'starsnap-company_caddyfile_0000000000000000\n'; fi
@@ -250,12 +260,6 @@ curl() {
   grep -Fq -- '--noproxy *' <<<"$*"
   grep -Fq -- '--connect-timeout 10' <<<"$*"
   grep -Fq -- '--max-time 30' <<<"$*"
-  if [[ "$*" == *'actuator/health'* ]]; then
-    grep -Fq -- 'http://192.168.1.103:8081/actuator/health' <<<"$*"
-    if [[ "$(read_state manager-health-result)" != pass ]]; then return 1; fi
-    printf '{"status":"UP"}\n'
-    return 0
-  fi
   grep -Fq -- '--resolve log.starsnap.kr:443:192.168.1.103' <<<"$*"
   grep -Fq -- 'https://log.starsnap.kr/' <<<"$*"
   if [[ "$(read_state route-result)" == pass ]]; then

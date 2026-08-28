@@ -36,21 +36,30 @@ docker() {
     network:inspect|secret:inspect)
       ;;
     service:inspect)
-      name="${1:-}"
-      test -e "$(state "service-$name")"
+      if [[ "$*" == *'.Spec.Mode.Replicated.Replicas'* ]]; then
+        name="${*: -1}"
+        cat "$(state "replicas-$name")"
+      else
+        name="${1:-}"
+        test -e "$(state "service-$name")"
+      fi
       ;;
     service:create)
-      local args="$*"
+      local args="$*" replicas=''
       while (( $# > 0 )); do
         if [[ "$1" == --name ]]; then name="$2"; break; fi
         shift
       done
       test -n "$name"
+      replicas="$(awk '{for (i=1; i<=NF; i++) if ($i == "--replicas") {print $(i+1); exit}}' <<<"$args")"
       printf '%s\n' "$args" >"$(state "create-$name")"
       : >"$(state "service-$name")"
+      printf '%s\n' "$replicas" >"$(state "replicas-$name")"
       ;;
     service:scale)
       printf '%s\n' "$*" >>"$(state scales)"
+      name="${1%%=*}"
+      printf '%s\n' "${1#*=}" >"$(state "replicas-$name")"
       ;;
     *)
       echo "Unexpected fake docker call: $object $operation $*" >&2
@@ -93,6 +102,9 @@ grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-hub_web' <<<"$w
 HUB_SERVER_REPLICAS=0 HUB_WEB_REPLICAS=0 run_ensure
 grep -Fxq 'starsnap-log-server=0' "$(state scales)"
 grep -Fxq 'starsnap-log-web=0' "$(state scales)"
+scale_count="$(wc -l <"$(state scales)")"
+HUB_SERVER_REPLICAS=0 HUB_WEB_REPLICAS=0 run_ensure
+test "$(wc -l <"$(state scales)")" -eq "$scale_count"
 
 : >"$(state spec-drift)"
 drift_output="$(state drift-output)"

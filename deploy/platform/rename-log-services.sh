@@ -213,9 +213,9 @@ verify_caddy_route() {
 
 verify_manager_health() {
   local health_body
-  health_body="$(curl --silent --show-error --fail --noproxy '*' \
-    --connect-timeout 10 --max-time 30 \
-    "http://$manager_address:8081/actuator/health")"
+  health_body="$(docker run --rm --network host --entrypoint wget "$caddy_image" \
+    --quiet --timeout=30 --tries=1 --output-document=- \
+    'http://127.0.0.1:8081/actuator/health')"
   grep -Fq '"status":"UP"' <<<"$health_body"
 }
 

@@ -84,12 +84,21 @@ verify_existing_service() {
     "$node_binary" deploy/platform/verify-log-service-spec.mjs < <(docker service inspect "$service")
 }
 
+scale_if_needed() {
+  local service="$1" replicas="$2" current_replicas
+  current_replicas="$(docker service inspect \
+    --format '{{.Spec.Mode.Replicated.Replicas}}' "$service" 2>/dev/null || true)"
+  if [[ "$current_replicas" != "$replicas" ]]; then
+    docker service scale "$service=$replicas" >/dev/null
+  fi
+}
+
 ensure_server() {
   local app_attachment
   local -a publish_args=()
   if service_exists "$server_service"; then
     verify_existing_service "$server_service" server "$server_legacy_alias" || return 1
-    docker service scale "$server_service=$server_replicas" >/dev/null
+    scale_if_needed "$server_service" "$server_replicas"
     return 0
   fi
 
@@ -143,7 +152,7 @@ ensure_web() {
   local app_attachment
   if service_exists "$web_service"; then
     verify_existing_service "$web_service" web "$web_legacy_alias" || return 1
-    docker service scale "$web_service=$web_replicas" >/dev/null
+    scale_if_needed "$web_service" "$web_replicas"
     return 0
   fi
 

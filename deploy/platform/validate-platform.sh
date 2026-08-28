@@ -37,6 +37,7 @@ readonly secret_name_variables=(
   ERP_SMTP_PASSWORD_SECRET_NAME
   ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME
   ERP_EAT_API_SECRET_NAME
+  ERP_NEIS_API_SECRET_NAME
 )
 
 if [[ "${1:-}" == "--ci" ]]; then
@@ -133,6 +134,8 @@ grep -Fq 'Snapshot manifest and database dump hashes verified.' deploy/platform/
 grep -Fq 'EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key' deploy/platform/starsnap-erp.yml
 grep -Fq 'EAT_CACHE_TTL_MINUTES: "360"' deploy/platform/starsnap-erp.yml
 grep -Fq 'ERP_EAT_API_SECRET_NAME' deploy/platform/starsnap-erp.yml
+grep -Fq 'NEIS_API_KEY_FILE: /run/secrets/neis-api-key' deploy/platform/starsnap-erp.yml
+grep -Fq 'ERP_NEIS_API_SECRET_NAME' deploy/platform/starsnap-erp.yml
 grep -Fq 'DEPLOY-ERP-192.168.1.103' deploy/platform/deploy-erp.sh
 
 echo "Platform stack configuration passed static validation."

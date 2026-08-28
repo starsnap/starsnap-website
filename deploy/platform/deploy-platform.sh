@@ -25,6 +25,7 @@ readonly secret_name_variables=(
   ERP_SMTP_PASSWORD_SECRET_NAME
   ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME
   ERP_EAT_API_SECRET_NAME
+  ERP_NEIS_API_SECRET_NAME
 )
 readonly image_variables=(
   SNS_WEB_IMAGE

@@ -29,7 +29,7 @@ record_event() {
 }
 
 reset_state() {
-  local pre_state="$1" verify_result="$2" mounted_secret_name="${3:-erp-eat-api-key-v1}"
+  local pre_state="$1" verify_result="$2" mounted_secret_name="${3:-erp-eat-api-key-v1}" mounted_neis_secret_name="${4:-}"
   find "$FAKE_ERP_DEPLOY_ROOT" -mindepth 1 -delete
   write_state phase previous
   write_state update-state completed
@@ -37,6 +37,8 @@ reset_state() {
   write_state verify-result "$verify_result"
   write_state previous-secret "$mounted_secret_name"
   write_state current-secret "$mounted_secret_name"
+  write_state previous-neis-secret "$mounted_neis_secret_name"
+  write_state current-neis-secret "$mounted_neis_secret_name"
   : >"$(state events)"
   if [[ "$pre_state" == healthy ]]; then
     write_state replicas 1/1
@@ -97,11 +99,17 @@ docker() {
           ;;
         *'.Spec.TaskTemplate.ContainerSpec.Secrets'*)
           printf '%s|eat-api-service-key|1000|1000|256\n' "$(read_state current-secret)"
+          if [[ -n "$(read_state current-neis-secret)" ]]; then
+            printf '%s|neis-api-key|1000|1000|256\n' "$(read_state current-neis-secret)"
+          fi
           ;;
         *'.Spec.TaskTemplate.ContainerSpec.Env'*)
           printf '%s\n' \
             'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' \
             'EAT_CACHE_TTL_MINUTES=360'
+          if [[ -n "$(read_state current-neis-secret)" ]]; then
+            printf '%s\n' 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key'
+          fi
           ;;
         *'.Spec.UpdateConfig.FailureAction'*|*'if .Spec.UpdateConfig'*)
           read_state failure-action
@@ -122,7 +130,7 @@ docker() {
       printf 'starsnap-erp_web %s\n' "$(read_state replicas)"
       ;;
     service:update)
-      local secret_remove='' secret_add='' secret_source=''
+      local secret_remove='' secret_add='' secret_source='' neis_secret_remove='' neis_secret_add='' neis_secret_source=''
       while (( $# > 0 )); do
         case "$1" in
           --image)
@@ -134,14 +142,25 @@ docker() {
             shift 2
             ;;
           --env-add)
+            if [[ "$2" == 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' ]]; then
+              write_state neis-env-add "$2"
+            fi
             shift 2
             ;;
           --secret-rm)
-            secret_remove="$2"
+            if [[ "$2" == erp-neis-api-key-* ]]; then
+              neis_secret_remove="$2"
+            else
+              secret_remove="$2"
+            fi
             shift 2
             ;;
           --secret-add)
-            secret_add="$2"
+            if [[ "$2" == *'target=neis-api-key'* ]]; then
+              neis_secret_add="$2"
+            else
+              secret_add="$2"
+            fi
             shift 2
             ;;
           *)
@@ -159,6 +178,14 @@ docker() {
           secret_source="${secret_add%%,*}"
           write_state current-secret "${secret_source#source=}"
         fi
+        if [[ -n "$neis_secret_add" ]]; then
+          if [[ -n "$neis_secret_remove" ]]; then
+            write_state neis-secret-rm "$neis_secret_remove"
+          fi
+          write_state neis-secret-add "$neis_secret_add"
+          neis_secret_source="${neis_secret_add%%,*}"
+          write_state current-neis-secret "${neis_secret_source#source=}"
+        fi
         write_state phase candidate
         write_state replicas 1/1
         write_state update-state completed
@@ -175,6 +202,7 @@ docker() {
     service:rollback)
       write_state phase previous
       write_state current-secret "$(read_state previous-secret)"
+      write_state current-neis-secret "$(read_state previous-neis-secret)"
       write_state replicas 1/1
       write_state update-state rollback_completed
       write_state failure-action rollback
@@ -271,6 +299,7 @@ run_deploy() {
   (
     export ALLOW_ERP_DEPLOY='DEPLOY-ERP-192.168.1.103'
     export ERP_EAT_API_SECRET_NAME='erp-eat-api-key-v2'
+    export ERP_NEIS_API_SECRET_NAME='erp-neis-api-key-v2'
     export ERP_WEB_IMAGE="$FAKE_ERP_WEB_IMAGE"
     # shellcheck disable=SC1091 # The repository root is the required working directory.
     source deploy/platform/deploy-erp.sh
@@ -300,6 +329,16 @@ assert_secret_rotation_requested() {
   test "$(read_state secret-add)" = 'source=erp-eat-api-key-v2,target=eat-api-service-key,uid=1000,gid=1000,mode=0400'
 }
 
+assert_neis_secret_add_requested() {
+  test "$(read_state neis-env-add)" = 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key'
+  test "$(read_state neis-secret-add)" = 'source=erp-neis-api-key-v2,target=neis-api-key,uid=1000,gid=1000,mode=0400'
+}
+
+assert_neis_secret_rotation_requested() {
+  test "$(read_state neis-secret-rm)" = 'erp-neis-api-key-v1'
+  assert_neis_secret_add_requested
+}
+
 readonly FAKE_PREVIOUS_IMAGE='registry.example/starsnap-erp-web:previous'
 FAKE_ERP_WEB_IMAGE="ghcr.io/starsnap/starsnap-erp-web@sha256:$(printf 'a%.0s' {1..64})"
 FAKE_LOCAL_IMAGE="starsnap.invalid/starsnap-platform-local/starsnap-erp-web:sha-$(printf 'a%.0s' {1..64})"
@@ -318,8 +357,10 @@ test "$healthy_failure_status" -ne 0
 assert_contains "$(state events)" 'candidate-update|none'
 assert_contains "$(state events)" rollback
 assert_secret_rotation_requested
+assert_neis_secret_add_requested
 test "$(read_state phase)" = previous
 test "$(read_state current-secret)" = 'erp-eat-api-key-v1'
+test -z "$(read_state current-neis-secret)"
 test "$(read_state update-state)" = rollback_completed
 assert_contains "$healthy_failure_output" 'ERP rollback verified:'
 assert_not_contains "$healthy_failure_output" 'CRITICAL:'
@@ -337,8 +378,10 @@ test "$unhealthy_failure_status" -ne 0
 assert_contains "$(state events)" 'candidate-update|pause'
 assert_not_contains "$(state events)" rollback
 assert_secret_rotation_requested
+assert_neis_secret_add_requested
 test "$(read_state phase)" = candidate
 test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
+test "$(read_state current-neis-secret)" = 'erp-neis-api-key-v2'
 test "$(read_state failure-action)" = pause
 assert_contains "$unhealthy_failure_output" 'refusing to roll back to its unavailable specification'
 assert_contains "$unhealthy_failure_output" 'candidate ERP image is running and core-healthy'
@@ -352,8 +395,10 @@ write_state failure-action continue
 recovery_success_output="$(state recovery-success.out)"
 run_deploy "$recovery_success_output"
 assert_secret_rotation_requested
+assert_neis_secret_add_requested
 test "$(read_state phase)" = candidate
 test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
+test "$(read_state current-neis-secret)" = 'erp-neis-api-key-v2'
 test "$(read_state failure-action)" = continue
 test -e "$(state candidate-service-image-inspected)"
 test -e "$(state candidate-running-image-inspected)"
@@ -365,14 +410,28 @@ test "$(wc -l <"$(state events)" | tr -d ' ')" = 3
 assert_contains "$recovery_success_output" "ERP-only deployment verified: image=$FAKE_ERP_WEB_IMAGE"
 assert_not_contains "$recovery_success_output" 'CRITICAL:'
 
+# A versioned NEIS secret rotates atomically at the stable in-container target.
+reset_state healthy pass 'erp-eat-api-key-v2' 'erp-neis-api-key-v1'
+neis_rotation_output="$(state neis-rotation-success.out)"
+run_deploy "$neis_rotation_output"
+test ! -e "$(state secret-rm)"
+test ! -e "$(state secret-add)"
+assert_neis_secret_rotation_requested
+test "$(read_state current-neis-secret)" = 'erp-neis-api-key-v2'
+assert_contains "$neis_rotation_output" 'Rotating NEIS secret mount: erp-neis-api-key-v1 -> erp-neis-api-key-v2'
+assert_not_contains "$neis_rotation_output" 'CRITICAL:'
+
 # A service already using the requested version must not receive redundant
 # secret remove/add operations during an otherwise successful image update.
-reset_state healthy pass 'erp-eat-api-key-v2'
+reset_state healthy pass 'erp-eat-api-key-v2' 'erp-neis-api-key-v2'
 idempotent_output="$(state idempotent-success.out)"
 run_deploy "$idempotent_output"
 test ! -e "$(state secret-rm)"
 test ! -e "$(state secret-add)"
 test "$(read_state current-secret)" = 'erp-eat-api-key-v2'
+test ! -e "$(state neis-secret-rm)"
+test ! -e "$(state neis-secret-add)"
+test "$(read_state current-neis-secret)" = 'erp-neis-api-key-v2'
 assert_contains "$idempotent_output" "ERP-only deployment verified: image=$FAKE_ERP_WEB_IMAGE"
 assert_not_contains "$idempotent_output" 'Rotating eAT secret mount:'
 

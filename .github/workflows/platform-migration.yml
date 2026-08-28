@@ -81,6 +81,7 @@ jobs:
       ERP_SMTP_PASSWORD_SECRET_NAME: starsnap-platform-erp-smtp-password-v1
       ERP_EMBEDDING_WORKER_TOKEN_SECRET_NAME: starsnap-platform-erp-embedding-token-v1
       ERP_EAT_API_SECRET_NAME: starsnap-platform-erp-eat-api-v2
+      ERP_NEIS_API_SECRET_NAME: starsnap-platform-erp-neis-api-v1
       PLATFORM_TRANSFER_TOKEN_SECRET_NAME: starsnap-platform-transfer-token-20260827
       PLATFORM_TRANSFER_PASSPHRASE_SECRET_NAME: starsnap-platform-transfer-passphrase-20260827
       HUB_POSTGRES_VOLUME_NAME: starsnap-hub-postgres-data-v1
@@ -136,6 +137,7 @@ jobs:
           ERP_SMTP_USERNAME_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_USERNAME_VALUE }}
           ERP_SMTP_PASSWORD_VALUE: ${{ secrets.PLATFORM_ERP_SMTP_PASSWORD_VALUE }}
           ERP_EAT_API_VALUE: ${{ secrets.PLATFORM_ERP_EAT_API_VALUE }}
+          ERP_NEIS_API_VALUE: ${{ secrets.PLATFORM_ERP_NEIS_API_VALUE }}
           PLATFORM_TRANSFER_TOKEN_VALUE: ${{ secrets.PLATFORM_TRANSFER_TOKEN_VALUE }}
           PLATFORM_TRANSFER_PASSPHRASE_VALUE: ${{ secrets.PLATFORM_TRANSFER_PASSPHRASE_VALUE }}
         run: bash deploy/platform/provision-secrets.sh

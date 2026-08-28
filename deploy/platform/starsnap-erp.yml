@@ -226,6 +226,7 @@ services:
       ERP_EMBEDDING_WORKER_TOKEN_FILE: /run/secrets/embedding-worker-token
       EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key
       EAT_CACHE_TTL_MINUTES: "360"
+      NEIS_API_KEY_FILE: /run/secrets/neis-api-key
       HUB_SERVER_LOG_TIMEOUT_MS: "750"
       HUB_SERVER_LOG_URL: http://starsnap-log-server:8081/api/server-logs
       PGPOOL_MAX: "1"
@@ -259,6 +260,11 @@ services:
         mode: 0400
       - source: eat_api_service_key
         target: eat-api-service-key
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: neis_api_key
+        target: neis-api-key
         uid: "1000"
         gid: "1000"
         mode: 0400
@@ -397,3 +403,6 @@ secrets:
   eat_api_service_key:
     external: true
     name: ${ERP_EAT_API_SECRET_NAME:?ERP_EAT_API_SECRET_NAME is required}
+  neis_api_key:
+    external: true
+    name: ${ERP_NEIS_API_SECRET_NAME:?ERP_NEIS_API_SECRET_NAME is required}

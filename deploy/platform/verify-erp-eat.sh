@@ -28,18 +28,83 @@ docker exec "$web_container" node -e '
     import("node:fs").then(({ readFileSync }) => readFileSync(
       "/run/secrets/eat-api-service-key", "utf8",
     ).trim()),
-  ]).then(([health, secret]) => {
+    import("node:fs").then(({ readFileSync }) => readFileSync(
+      "/run/secrets/neis-api-key", "utf8",
+    ).trim()),
+  ]).then(([health, eatSecret, neisSecret]) => {
     if (!health.response.ok || health.body?.ok !== true) throw new Error("ERP health failed");
     if (String(health.body.schemaVersion) !== process.argv[1]) {
       throw new Error(`Expected schema ${process.argv[1]}, got ${health.body.schemaVersion}`);
     }
-    if (secret.length < 32) throw new Error("eAT secret file is invalid");
-    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true`);
+    if (eatSecret.length < 32) throw new Error("eAT secret file is invalid");
+    if (neisSecret.length < 16) throw new Error("NEIS secret file is invalid");
+    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true NeisSecretReadable=true`);
   }).catch((error) => {
     console.error(`ERP health verification failed: ${error.message}`);
     process.exit(1);
   });
 ' "$expected_schema_version"
+
+neis_school_context="$(docker exec "$postgres_container" \
+  psql --username mealops --dbname mealops --tuples-only --no-align --field-separator '|' \
+  --command "
+    SELECT source_office_code, source_school_code
+    FROM schools
+    WHERE source = 'NEIS_SCHOOL_INFO'
+      AND active = TRUE
+      AND mapping_status = 'MAPPED'
+    ORDER BY updated_at DESC, id
+    LIMIT 1
+  ")"
+IFS='|' read -r neis_office_code neis_school_code <<<"$neis_school_context"
+readonly neis_office_code neis_school_code
+[[ "$neis_office_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
+[[ "$neis_school_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
+
+docker exec "$web_container" node -e '
+  const { readFileSync } = require("node:fs");
+  const configuredKey = readFileSync("/run/secrets/neis-api-key", "utf8").trim();
+  let key;
+  try {
+    key = decodeURIComponent(configuredKey);
+  } catch {
+    throw new Error("NEIS secret contains invalid percent encoding");
+  }
+  const year = String(new Date().getUTCFullYear());
+  const url = new URL("https://open.neis.go.kr/hub/mealServiceDietInfo");
+  url.searchParams.set("KEY", key);
+  url.searchParams.set("Type", "json");
+  url.searchParams.set("pIndex", "1");
+  url.searchParams.set("pSize", "1");
+  url.searchParams.set("ATPT_OFCDC_SC_CODE", process.argv[1]);
+  url.searchParams.set("SD_SCHUL_CODE", process.argv[2]);
+  url.searchParams.set("MLSV_FROM_YMD", `${year}0101`);
+  url.searchParams.set("MLSV_TO_YMD", `${year}1231`);
+  fetch(url, {
+    headers: { accept: "application/json" },
+    redirect: "manual",
+    referrerPolicy: "no-referrer",
+    signal: AbortSignal.timeout(10_000),
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    let result = payload?.RESULT;
+    if (!result && Array.isArray(payload?.mealServiceDietInfo)) {
+      for (const section of payload.mealServiceDietInfo) {
+        for (const head of Array.isArray(section?.head) ? section.head : []) {
+          if (head?.RESULT) result = head.RESULT;
+        }
+      }
+    }
+    if (!result || !["INFO-000", "INFO-200"].includes(result.CODE)) {
+      throw new Error(`Unexpected NEIS result: ${result?.CODE ?? "missing"}`);
+    }
+    console.log(`Authenticated NEIS meal lookup verified: code=${result.CODE}`);
+  }).catch((error) => {
+    console.error(`Authenticated NEIS meal lookup failed: ${error.message}`);
+    process.exit(1);
+  });
+' "$neis_office_code" "$neis_school_code"
 
 bidder_context="$(docker exec "$postgres_container" \
   psql --username mealops --dbname mealops --tuples-only --no-align --field-separator '|' \
@@ -48,11 +113,18 @@ bidder_context="$(docker exec "$postgres_container" \
     FROM tenants t
     JOIN tenant_memberships tm ON tm.tenant_id = t.id
     JOIN erp_users u ON u.id = tm.user_id
-    WHERE t.code = 'ORG-8025A70B4CF24D018F67'
-      AND t.organization_type = 'BIDDER'
+    JOIN school_bids bid
+      ON bid.bidder_tenant_id = t.id
+     AND bid.status IN ('AWARDED', 'ACTIVE')
+    JOIN schools school
+      ON school.id = bid.school_id
+     AND school.source = 'NEIS_SCHOOL_INFO'
+     AND school.active = TRUE
+     AND school.mapping_status = 'MAPPED'
+    WHERE t.organization_type = 'BIDDER'
       AND t.status = 'ACTIVE'
       AND u.status = 'ACTIVE'
-    ORDER BY t.code, u.id
+    ORDER BY bid.contract_start DESC, t.code, u.id
     LIMIT 1
   ")"
 IFS='|' read -r tenant_code user_id <<<"$bidder_context"
@@ -79,6 +151,95 @@ docker exec "$postgres_container" \
     INSERT INTO auth_sessions (token_hash, user_id, expires_at)
     VALUES ('$session_hash', '$user_id', clock_timestamp() + interval '10 minutes')
   " >/dev/null
+
+neis_bid_context="$(docker exec "$postgres_container" \
+  psql --username mealops --dbname mealops --tuples-only --no-align --field-separator '|' \
+  --command "
+    SELECT bid.id,
+           bid.contract_start::date::text,
+           LEAST(bid.contract_end::date, bid.contract_start::date + 6)::text
+    FROM school_bids bid
+    JOIN tenants bidder
+      ON bidder.id = bid.bidder_tenant_id
+     AND bidder.code = '$tenant_code'
+     AND bidder.organization_type = 'BIDDER'
+     AND bidder.status = 'ACTIVE'
+    JOIN schools school
+      ON school.id = bid.school_id
+     AND school.source = 'NEIS_SCHOOL_INFO'
+     AND school.active = TRUE
+     AND school.mapping_status = 'MAPPED'
+    WHERE bid.status IN ('AWARDED', 'ACTIVE')
+    ORDER BY bid.contract_start DESC, bid.id
+    LIMIT 1
+  ")"
+IFS='|' read -r neis_school_bid_id neis_from_date neis_to_date <<<"$neis_bid_context"
+readonly neis_school_bid_id neis_from_date neis_to_date
+[[ "$neis_school_bid_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
+[[ "$neis_from_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+[[ "$neis_to_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+
+neis_route_payload="$(docker exec "$web_container" node -e '
+  process.stdout.write(JSON.stringify({
+    tenant: process.argv[1],
+    token: process.argv[2],
+    schoolBidId: process.argv[3],
+    fromDate: process.argv[4],
+    toDate: process.argv[5],
+  }));
+' "$tenant_code" "$session_token" "$neis_school_bid_id" "$neis_from_date" "$neis_to_date")"
+
+neis_route_result="$(printf '%s' "$neis_route_payload" | docker exec --interactive "$web_container" node -e '
+  process.stdin.setEncoding("utf8");
+  let input = "";
+  process.stdin.on("data", chunk => input += chunk);
+  process.stdin.on("end", async () => {
+    try {
+      const smoke = JSON.parse(input);
+      const url = new URL("http://127.0.0.1:3000/api/erp/neis/meals");
+      url.searchParams.set("tenant", smoke.tenant);
+      url.searchParams.set("schoolBidId", smoke.schoolBidId);
+      url.searchParams.set("fromDate", smoke.fromDate);
+      url.searchParams.set("toDate", smoke.toDate);
+      const headers = {
+        host: "erp.starsnap.kr",
+        origin: "https://erp.starsnap.kr",
+        "x-forwarded-host": "erp.starsnap.kr",
+        "x-forwarded-proto": "https",
+        cookie: `__Host-starsnap_session=${smoke.token}`,
+      };
+      let response;
+      let body;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        response = await fetch(url, { headers });
+        body = await response.json().catch(() => ({}));
+        if (response.ok) break;
+        if (![502, 503, 504].includes(response.status) || attempt === 3) {
+          throw new Error(`HTTP ${response.status}: ${body.message ?? "unknown error"}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, attempt * 1_000));
+      }
+      if (body?.source !== "NEIS") throw new Error(`Expected NEIS source, got ${body?.source}`);
+      if (body?.school?.bidId !== smoke.schoolBidId) throw new Error("NEIS school bid does not match request");
+      if (body?.fromDate !== smoke.fromDate || body?.toDate !== smoke.toDate) {
+        throw new Error("NEIS response range does not match request");
+      }
+      if (!Number.isSafeInteger(body?.total) || !Array.isArray(body?.items)) {
+        throw new Error("NEIS response shape is invalid");
+      }
+      console.log(JSON.stringify({
+        source: body.source,
+        total: body.total,
+        itemCount: body.items.length,
+        schoolMatched: true,
+      }));
+    } catch (error) {
+      console.error(`Authenticated NEIS ERP route smoke failed: ${error.message}`);
+      process.exit(1);
+    }
+  });
+')"
+echo "$neis_route_result"
 
 start_date='2026-07-29'
 end_date='2026-08-27'

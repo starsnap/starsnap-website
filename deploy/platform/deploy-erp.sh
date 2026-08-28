@@ -263,6 +263,7 @@ test "${ALLOW_ERP_DEPLOY:-}" = 'DEPLOY-ERP-192.168.1.103'
 bash deploy/platform/validate-platform.sh
 require_manager
 docker secret inspect "$ERP_EAT_API_SECRET_NAME" >/dev/null
+docker secret inspect "$ERP_NEIS_API_SECRET_NAME" >/dev/null
 docker service inspect "$web_service" "$postgres_service" >/dev/null
 verify_image
 back_up_database
@@ -321,6 +322,33 @@ else
   )
 fi
 
+mapfile -t existing_neis_secret_names < <(
+  awk -F'|' -v target='neis-api-key' '$2 == target {print $1}' <<<"$secret_specs"
+)
+if (( ${#existing_neis_secret_names[@]} > 1 )); then
+  echo 'Multiple Docker secrets are mounted at the NEIS secret target.' >&2
+  exit 1
+fi
+if awk -F'|' -v name="$ERP_NEIS_API_SECRET_NAME" -v target='neis-api-key' \
+  '$1 == name && $2 == target && $3 == "1000" && $4 == "1000" && $5 == "256" {found=1} END {exit found ? 0 : 1}' \
+  <<<"$secret_specs"; then
+  :
+elif awk -F'|' -v name="$ERP_NEIS_API_SECRET_NAME" \
+  '$1 == name {found=1} END {exit found ? 0 : 1}' \
+  <<<"$secret_specs"; then
+  echo 'The requested NEIS secret is already mounted with an unexpected target or permission.' >&2
+  exit 1
+else
+  if (( ${#existing_neis_secret_names[@]} == 1 )); then
+    echo "Rotating NEIS secret mount: ${existing_neis_secret_names[0]} -> $ERP_NEIS_API_SECRET_NAME"
+    secret_update+=(--secret-rm "${existing_neis_secret_names[0]}")
+  fi
+  secret_update+=(
+    --secret-add
+    "source=$ERP_NEIS_API_SECRET_NAME,target=neis-api-key,uid=1000,gid=1000,mode=0400"
+  )
+fi
+
 update_failure_args=()
 if (( previous_service_healthy == 0 )); then
   update_failure_args+=(--update-failure-action pause)
@@ -333,6 +361,7 @@ docker service update \
   --image "$local_image" \
   --env-add 'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' \
   --env-add 'EAT_CACHE_TTL_MINUTES=360' \
+  --env-add 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' \
   "${secret_update[@]}" \
   "${update_failure_args[@]}" \
   --force \
@@ -350,11 +379,15 @@ deployed_secret_specs="$(docker service inspect \
 grep -Fxq "$ERP_EAT_API_SECRET_NAME|eat-api-service-key|1000|1000|256" \
   <<<"$deployed_secret_specs"
 test "$(awk -F'|' '$2 == "eat-api-service-key" {count++} END {print count + 0}' <<<"$deployed_secret_specs")" -eq 1
+grep -Fxq "$ERP_NEIS_API_SECRET_NAME|neis-api-key|1000|1000|256" \
+  <<<"$deployed_secret_specs"
+test "$(awk -F'|' '$2 == "neis-api-key" {count++} END {print count + 0}' <<<"$deployed_secret_specs")" -eq 1
 service_env="$(docker service inspect \
   --format '{{range .Spec.TaskTemplate.ContainerSpec.Env}}{{println .}}{{end}}' \
   "$web_service")"
 test "$(grep -Fxc 'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' <<<"$service_env")" -eq 1
 test "$(grep -Fxc 'EAT_CACHE_TTL_MINUTES=360' <<<"$service_env")" -eq 1
+test "$(grep -Fxc 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' <<<"$service_env")" -eq 1
 
 web_container="$(single_running_container "$web_service")"
 test "$(docker inspect --format '{{.Image}}' "$web_container")" \

@@ -205,13 +205,19 @@ require_manager() {
 }
 
 verify_image() {
-  local architecture operating_system
+  local architecture operating_system expected_repo_digest repo_digests
   [[ "$HUB_WEB_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web@sha256:[0-9a-f]{64}$ ]]
-  docker pull "$HUB_WEB_IMAGE" >/dev/null
-  architecture="$(docker image inspect --format '{{.Architecture}}' "$HUB_WEB_IMAGE")"
-  operating_system="$(docker image inspect --format '{{.Os}}' "$HUB_WEB_IMAGE")"
+  [[ "$HUB_WEB_PULL_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]]
+  docker pull "$HUB_WEB_PULL_IMAGE" >/dev/null
+  architecture="$(docker image inspect --format '{{.Architecture}}' "$HUB_WEB_PULL_IMAGE")"
+  operating_system="$(docker image inspect --format '{{.Os}}' "$HUB_WEB_PULL_IMAGE")"
   [[ "$architecture" =~ ^(arm64|aarch64)$ ]]
   test "$operating_system" = 'linux'
+  expected_repo_digest="$HUB_WEB_IMAGE"
+  repo_digests="$(docker image inspect \
+    --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+    "$HUB_WEB_PULL_IMAGE")"
+  test "$(grep -Fxc "$expected_repo_digest" <<<"$repo_digests")" -eq 1
 }
 
 manager_local_image_reference() {
@@ -246,8 +252,8 @@ readonly previous_service_healthy
 
 local_image="$(manager_local_image_reference)"
 readonly local_image
-docker tag "$HUB_WEB_IMAGE" "$local_image"
-test "$(docker image inspect --format '{{.Id}}' "$HUB_WEB_IMAGE")" \
+docker tag "$HUB_WEB_PULL_IMAGE" "$local_image"
+test "$(docker image inspect --format '{{.Id}}' "$HUB_WEB_PULL_IMAGE")" \
   = "$(docker image inspect --format '{{.Id}}' "$local_image")"
 
 update_failure_args=()

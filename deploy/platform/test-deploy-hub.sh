@@ -19,12 +19,14 @@ record_event() { printf '%s\n' "$1" >>"$(state events)"; }
 
 reset_state() {
   local previous_health="$1" candidate_health="$2" rollback_health="$3" update_mode="$4"
+  local repo_digest="${5:-$FAKE_HUB_WEB_IMAGE}"
   find "$FAKE_HUB_DEPLOY_ROOT" -mindepth 1 -delete
   write_state phase previous
   write_state previous-health "$previous_health"
   write_state candidate-health "$candidate_health"
   write_state rollback-health "$rollback_health"
   write_state update-mode "$update_mode"
+  write_state repo-digest "$repo_digest"
   write_state update-state completed
   write_state failure-action rollback
   : >"$(state events)"
@@ -155,6 +157,7 @@ docker() {
       case "$format" in
         '{{.Architecture}}') printf 'arm64\n' ;;
         '{{.Os}}') printf 'linux\n' ;;
+        *'.RepoDigests'*) read_state repo-digest ;;
         '{{.Id}}') printf 'sha256:candidate-image-id\n' ;;
         *) echo "Unexpected fake image inspect: $format" >&2; return 1 ;;
       esac
@@ -186,6 +189,7 @@ run_deploy() {
   (
     export ALLOW_HUB_DEPLOY='DEPLOY-HUB-WEB-192.168.1.103'
     export HUB_WEB_IMAGE="$FAKE_HUB_WEB_IMAGE"
+    export HUB_WEB_PULL_IMAGE="$FAKE_HUB_WEB_PULL_IMAGE"
     # shellcheck disable=SC1091 # Repository-root execution is intentional.
     source deploy/platform/deploy-hub.sh
   ) >"$output_file" 2>&1
@@ -212,9 +216,22 @@ assert_not_contains() {
 readonly EXPECTED_ICON_SHA256='61432c716c06942f957481e9bf7af211081cf3c28ad4b2ecf16dfbb16d7eb8f9'
 readonly FAKE_PREVIOUS_IMAGE='starsnap.invalid/starsnap-platform-local/starsnap-log-web:sha-previous'
 FAKE_HUB_WEB_IMAGE="ghcr.io/starsnap/starsnap-log-web@sha256:$(printf 'a%.0s' {1..64})"
+FAKE_HUB_WEB_PULL_IMAGE='ghcr.io/starsnap/starsnap-log-web:release-test'
 FAKE_LOCAL_IMAGE="starsnap.invalid/starsnap-platform-local/starsnap-log-web:sha-$(printf 'a%.0s' {1..64})"
-readonly FAKE_HUB_WEB_IMAGE FAKE_LOCAL_IMAGE
-export EXPECTED_ICON_SHA256 FAKE_PREVIOUS_IMAGE FAKE_HUB_WEB_IMAGE FAKE_LOCAL_IMAGE
+readonly FAKE_HUB_WEB_IMAGE FAKE_HUB_WEB_PULL_IMAGE FAKE_LOCAL_IMAGE
+export EXPECTED_ICON_SHA256 FAKE_PREVIOUS_IMAGE FAKE_HUB_WEB_IMAGE FAKE_HUB_WEB_PULL_IMAGE FAKE_LOCAL_IMAGE
+
+# A mutable pull tag must resolve to the separately approved immutable digest.
+wrong_digest="ghcr.io/starsnap/starsnap-log-web@sha256:$(printf 'b%.0s' {1..64})"
+reset_state healthy healthy healthy normal "$wrong_digest"
+digest_mismatch_output="$(state digest-mismatch.out)"
+set +e
+run_deploy "$digest_mismatch_output"
+digest_mismatch_status=$?
+set -e
+test "$digest_mismatch_status" -ne 0
+test "$(read_state phase)" = previous
+test ! -s "$(state events)"
 
 # Healthy baseline + healthy candidate succeeds without touching sibling services.
 reset_state healthy healthy healthy normal

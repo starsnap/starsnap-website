@@ -13,6 +13,7 @@ on:
           - diagnose-eat-parser
           - diagnose-eat-container
           - deploy-erp
+          - deploy-hub
           - preflight
           - stage
           - restore
@@ -25,7 +26,7 @@ on:
           - verify-ollama
           - stop-target
       confirmation:
-        description: Required phrase for deploy-erp, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
+        description: Required phrase for deploy-erp, deploy-hub, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
         required: false
         default: ""
         type: string
@@ -108,7 +109,7 @@ jobs:
           fi
 
       - name: Sign in to GHCR for private platform images
-        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' }}
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' || inputs.phase == 'deploy-hub' }}
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
@@ -156,6 +157,13 @@ jobs:
         env:
           ALLOW_ERP_DEPLOY: ${{ inputs.confirmation }}
         run: bash deploy/platform/deploy-erp.sh
+
+      - name: Deploy and verify Hub web only
+        if: ${{ inputs.phase == 'deploy-hub' }}
+        shell: bash
+        env:
+          ALLOW_HUB_DEPLOY: ${{ inputs.confirmation }}
+        run: bash deploy/platform/deploy-hub.sh
 
       - name: Verify live Ollama semantic path
         if: ${{ inputs.phase == 'verify-ollama' }}

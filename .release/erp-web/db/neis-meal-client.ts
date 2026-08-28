@@ -211,7 +211,11 @@ export async function fetchNeisMeals(
   );
   try {
     const response = await (options.fetchImpl ?? fetch)(url, {
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        // The NEIS origin returns HTTP 500 for Node/workerd's default compressed request.
+        'Accept-Encoding': 'identity',
+      },
       redirect: 'manual',
       referrerPolicy: 'no-referrer',
       signal: controller.signal,

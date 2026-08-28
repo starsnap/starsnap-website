@@ -125,6 +125,7 @@ test('normalizes raw and encoded secrets once and sends them only to the HTTPS N
         assert.equal(url.searchParams.get('MLSV_TO_YMD'), '20260831');
         assert.equal(init?.redirect, 'manual');
         assert.equal(init?.referrerPolicy, 'no-referrer');
+        assert.equal(init?.headers?.['Accept-Encoding'], 'identity');
         return Response.json(successPayload);
       },
     });

@@ -8,7 +8,7 @@ export FAKE_HUB_REPLICAS="1/1"
 export FAKE_API_UPDATE_STATE="completed"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly old_line="SERVER_LOG_BASE_URL=http://192.168.1.2:8081"
-readonly new_line="SERVER_LOG_BASE_URL=http://starsnap-hub_server:8081"
+readonly new_line="SERVER_LOG_BASE_URL=http://starsnap-log-server:8081"
 export marker_name old_line new_line
 
 cleanup() {
@@ -48,7 +48,7 @@ docker() {
     service:ls)
       case "$*" in
         *starsnap-main_api*) printf 'starsnap-main_api 1/1\n' ;;
-        *starsnap-hub_server*) printf 'starsnap-hub_server %s\n' "$FAKE_HUB_REPLICAS" ;;
+        *starsnap-log-server*) printf 'starsnap-log-server %s\n' "$FAKE_HUB_REPLICAS" ;;
       esac
       ;;
     service:update)

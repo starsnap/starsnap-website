@@ -99,15 +99,18 @@ fi
 
 grep -Fq 'starsnap-main_starsnap-postgres:5432' deploy/platform/starsnap-admin.yml
 test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-erp.yml)" -eq 6
-test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-hub.yml)" -eq 3
+test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-hub.yml)" -eq 1
 test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-admin.yml)" -eq 2
 test "$(grep -Fc 'node.labels.starsnap.actions-runner == true' deploy/platform/starsnap-sns.yml)" -eq 1
 test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-erp.yml)" -eq 6
-test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-hub.yml)" -eq 3
+test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-hub.yml)" -eq 1
 test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-admin.yml)" -eq 2
 test "$(grep -Fc 'node.role == manager' deploy/platform/starsnap-sns.yml)" -eq 1
 grep -Fq 'starsnap-main_api:8080' deploy/platform/build-platform-images.ps1
 grep -Fq 'sourceImageId' deploy/platform/build-platform-images.ps1
+grep -Fq "server_service=\"\${LOG_SERVER_SERVICE_NAME:-starsnap-log-server}\"" deploy/platform/ensure-log-services.sh
+grep -Fq "web_service=\"\${LOG_WEB_SERVICE_NAME:-starsnap-log-web}\"" deploy/platform/ensure-log-services.sh
+grep -Fq 'guard_log_service_rename' deploy/platform/deploy-platform.sh
 grep -Fq 'wait_for_completed_service starsnap-erp_ollama-model' deploy/platform/deploy-platform.sh
 grep -Fq 'const modelName = "bge-m3:567m-fp16";' deploy/platform/verify-ollama.mjs
 grep -Fq 'const expectedDigest = "7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab";' deploy/platform/verify-ollama.mjs

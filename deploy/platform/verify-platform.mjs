@@ -74,12 +74,12 @@ async function main() {
   }
 
   expectMarker(
-    await request("starsnap-hub_web", 5173, "/", "log.starsnap.kr"),
+    await request("starsnap-log-web", 5173, "/", "log.starsnap.kr"),
     "StarSnap Log Dashboard",
     "Log Hub web service root",
   );
   const hubHealth = parseJson(
-    await request("starsnap-hub_server", 8081, "/actuator/health", "log.starsnap.kr"),
+    await request("starsnap-log-server", 8081, "/actuator/health", "log.starsnap.kr"),
     "Log Hub service health",
   );
   if (hubHealth.status !== "UP") {

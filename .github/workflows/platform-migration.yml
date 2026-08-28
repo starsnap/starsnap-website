@@ -14,6 +14,7 @@ on:
           - diagnose-eat-container
           - deploy-erp
           - deploy-hub
+          - rename-log-services
           - preflight
           - stage
           - restore
@@ -26,7 +27,7 @@ on:
           - verify-ollama
           - stop-target
       confirmation:
-        description: Required phrase for deploy-erp, deploy-hub, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
+        description: Required phrase for deploy-erp, deploy-hub, rename-log-services, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
         required: false
         default: ""
         type: string
@@ -176,6 +177,13 @@ jobs:
         env:
           ALLOW_HUB_DEPLOY: ${{ inputs.confirmation }}
         run: bash deploy/platform/deploy-hub.sh
+
+      - name: Rename Log Swarm services
+        if: ${{ inputs.phase == 'rename-log-services' }}
+        shell: bash
+        env:
+          ALLOW_LOG_SERVICE_RENAME: ${{ inputs.confirmation }}
+        run: bash deploy/platform/rename-log-services.sh
 
       - name: Verify live Ollama semantic path
         if: ${{ inputs.phase == 'verify-ollama' }}

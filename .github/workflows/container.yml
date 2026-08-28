@@ -109,6 +109,10 @@ jobs:
           bash -n deploy/platform/test-deploy-erp.sh
           bash -n deploy/platform/deploy-hub.sh
           bash -n deploy/platform/test-deploy-hub.sh
+          bash -n deploy/platform/ensure-log-services.sh
+          bash -n deploy/platform/test-ensure-log-services.sh
+          bash -n deploy/platform/rename-log-services.sh
+          bash -n deploy/platform/test-rename-log-services.sh
           bash -n deploy/platform/verify-erp-eat.sh
           bash -n deploy/platform/cleanup-server-transfer.sh
           bash -n deploy/platform/provision-secrets.sh
@@ -128,7 +132,12 @@ jobs:
           node --check deploy/platform/verify-ollama.mjs
           node --check deploy/platform/test-verify-ollama.mjs
           node deploy/platform/test-verify-ollama.mjs
+          node --check deploy/platform/verify-log-service-spec.mjs
+          node --check deploy/platform/test-verify-log-service-spec.mjs
+          node deploy/platform/test-verify-log-service-spec.mjs
           bash deploy/platform/test-deploy-hub.sh
+          bash deploy/platform/test-ensure-log-services.sh
+          bash deploy/platform/test-rename-log-services.sh
           python -c 'import ast, pathlib; ast.parse(pathlib.Path("deploy/platform/relay-server.py").read_text(encoding="utf-8"))'
           bash deploy/platform/validate-platform.sh --ci
           docker run --rm \
@@ -144,6 +153,10 @@ jobs:
             deploy/platform/test-deploy-erp.sh \
             deploy/platform/deploy-hub.sh \
             deploy/platform/test-deploy-hub.sh \
+            deploy/platform/ensure-log-services.sh \
+            deploy/platform/test-ensure-log-services.sh \
+            deploy/platform/rename-log-services.sh \
+            deploy/platform/test-rename-log-services.sh \
             deploy/platform/verify-erp-eat.sh \
             deploy/platform/restore-platform-data.sh \
             deploy/platform/switch-main-api-log.sh \
@@ -328,7 +341,7 @@ jobs:
     timeout-minutes: 15
 
     concurrency:
-      group: starsnap-company-production
+      group: starsnap-platform-production
       cancel-in-progress: false
 
     permissions:

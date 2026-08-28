@@ -94,11 +94,11 @@ docker() {
         *'.UpdateStatus'*) read_state update-state ;;
         *'json .Spec.TaskTemplate'*) printf '{"phase":"%s"}\n' "$(read_state phase)" ;;
         --*) echo "Unexpected fake service inspect: $*" >&2; return 1 ;;
-        *) test "$target" = 'starsnap-hub_web' ;;
+        *) test "$target" = 'starsnap-log-web' ;;
       esac
       ;;
     service:ls)
-      printf 'starsnap-hub_web 1/1\n'
+      printf 'starsnap-log-web 1/1\n'
       ;;
     service:update)
       while (( $# > 0 )); do
@@ -275,7 +275,7 @@ run_deploy "$rollback_health_output"
 rollback_health_status=$?
 set -e
 test "$rollback_health_status" -ne 0
-assert_contains "$rollback_health_output" 'The restored starsnap-hub_web task is not core-healthy.'
+assert_contains "$rollback_health_output" 'The restored starsnap-log-web task is not core-healthy.'
 assert_contains "$rollback_health_output" 'CRITICAL: Hub web rollback could not be fully verified'
 assert_not_contains "$rollback_health_output" 'Hub web rollback verified:'
 

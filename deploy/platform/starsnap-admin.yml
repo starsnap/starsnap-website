@@ -17,7 +17,7 @@ services:
       AUTH_COOKIE_SECURE: "true"
       ERP_DATABASE_URL: jdbc:postgresql://starsnap-erp_postgres:5432/mealops
       ERP_DATABASE_USERNAME: mealops
-      SERVER_LOG_BASE_URL: http://starsnap-hub_server:8081
+      SERVER_LOG_BASE_URL: http://starsnap-log-server:8081
       SPRING_DATASOURCE_URL: jdbc:postgresql://starsnap-main_starsnap-postgres:5432/starsnap
       SPRING_DATASOURCE_USERNAME: starsnap
       WEB_ORIGIN: https://admin.starsnap.kr

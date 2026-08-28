@@ -40,8 +40,8 @@ readonly private_image_services=(
   'starsnap-erp_smtp-mailer|ERP_SMTP_MAILER_IMAGE'
   'starsnap-erp_web|ERP_WEB_IMAGE'
   'starsnap-erp_embedding-worker|ERP_EMBEDDING_WORKER_IMAGE'
-  'starsnap-hub_server|HUB_SERVER_IMAGE'
-  'starsnap-hub_web|HUB_WEB_IMAGE'
+  'starsnap-log-server|HUB_SERVER_IMAGE'
+  'starsnap-log-web|HUB_WEB_IMAGE'
   'starsnap-admin_server|ADMIN_SERVER_IMAGE'
   'starsnap-admin_web|ADMIN_WEB_IMAGE'
   'starsnap-sns_web|SNS_WEB_IMAGE'
@@ -131,11 +131,28 @@ create_persistent_resources() {
   fi
 }
 
+guard_log_service_rename() {
+  local names
+  names="$(docker service ls --format '{{.Name}}')"
+  if grep -Fxq 'starsnap-hub_server' <<<"$names" \
+    && ! grep -Fxq 'starsnap-log-server' <<<"$names"; then
+    echo 'Refusing to prune starsnap-hub_server before starsnap-log-server exists.' >&2
+    return 1
+  fi
+  if grep -Fxq 'starsnap-hub_web' <<<"$names" \
+    && ! grep -Fxq 'starsnap-log-web' <<<"$names"; then
+    echo 'Refusing to prune starsnap-hub_web before starsnap-log-web exists.' >&2
+    return 1
+  fi
+}
+
 deploy_stacks() {
+  guard_log_service_rename
   docker stack deploy --with-registry-auth --prune --resolve-image always \
     --compose-file deploy/platform/starsnap-erp.yml starsnap-erp
   docker stack deploy --with-registry-auth --prune --resolve-image always \
     --compose-file deploy/platform/starsnap-hub.yml starsnap-hub
+  bash deploy/platform/ensure-log-services.sh
   docker stack deploy --with-registry-auth --prune --resolve-image always \
     --compose-file deploy/platform/starsnap-admin.yml starsnap-admin
   docker stack deploy --with-registry-auth --prune --resolve-image always \
@@ -328,8 +345,8 @@ case "$phase" in
     wait_for_replicas starsnap-erp_web 1
     wait_for_replicas starsnap-erp_embedding-worker 1
     wait_for_replicas starsnap-hub_postgres 1
-    wait_for_replicas starsnap-hub_server 1
-    wait_for_replicas starsnap-hub_web 1
+    wait_for_replicas starsnap-log-server 1
+    wait_for_replicas starsnap-log-web 1
     wait_for_replicas starsnap-admin_server 1
     wait_for_replicas starsnap-admin_web 1
     wait_for_replicas starsnap-sns_web 1
@@ -346,8 +363,8 @@ case "$phase" in
       starsnap-sns_web=0 \
       starsnap-admin_web=0 \
       starsnap-admin_server=0 \
-      starsnap-hub_web=0 \
-      starsnap-hub_server=0 \
+      starsnap-log-web=0 \
+      starsnap-log-server=0 \
       starsnap-erp_embedding-worker=0 \
       starsnap-erp_web=0 \
       starsnap-erp_smtp-mailer=0 \

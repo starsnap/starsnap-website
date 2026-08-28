@@ -7,7 +7,6 @@ on:
     paths:
       - ".github/actionlint.yaml"
       - ".github/workflows/container.yml"
-      - ".github/workflows/log-image-release.yml"
       - ".dockerignore"
       - ".openai/hosting.json"
       - "app/**"

@@ -243,14 +243,14 @@ assert_not_contains() {
 }
 
 readonly FAKE_PREVIOUS_IMAGE='starsnap.invalid/starsnap-platform-local/starsnap-log-server:sha-previous'
-FAKE_HUB_SERVER_IMAGE="ghcr.io/starsnap/starsnap-log-server@sha256:$(printf 'a%.0s' {1..64})"
-FAKE_HUB_SERVER_PULL_IMAGE='ghcr.io/starsnap/starsnap-log-server:release-test'
+FAKE_HUB_SERVER_IMAGE="ghcr.io/starsnap/starsnap-log-server-runtime@sha256:$(printf 'a%.0s' {1..64})"
+FAKE_HUB_SERVER_PULL_IMAGE='ghcr.io/starsnap/starsnap-log-server-runtime:release-test'
 FAKE_LOCAL_IMAGE="starsnap.invalid/starsnap-platform-local/starsnap-log-server:sha-$(printf 'a%.0s' {1..64})"
 readonly FAKE_HUB_SERVER_IMAGE FAKE_HUB_SERVER_PULL_IMAGE FAKE_LOCAL_IMAGE
 export FAKE_PREVIOUS_IMAGE FAKE_HUB_SERVER_IMAGE FAKE_HUB_SERVER_PULL_IMAGE FAKE_LOCAL_IMAGE
 
 # Mutable pull tags must resolve to the separately approved immutable digest.
-wrong_digest="ghcr.io/starsnap/starsnap-log-server@sha256:$(printf 'b%.0s' {1..64})"
+wrong_digest="ghcr.io/starsnap/starsnap-log-server-runtime@sha256:$(printf 'b%.0s' {1..64})"
 reset_state healthy healthy healthy normal "$wrong_digest"
 digest_output="$(state digest-mismatch.out)"
 set +e

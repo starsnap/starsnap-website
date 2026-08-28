@@ -273,8 +273,8 @@ restore_service_spec_cas() {
 
 verify_image() {
   local architecture operating_system expected_repo_digest repo_digests
-  [[ "$HUB_SERVER_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-server@sha256:[0-9a-f]{64}$ ]]
-  [[ "$HUB_SERVER_PULL_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-server:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]]
+  [[ "$HUB_SERVER_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-server-runtime@sha256:[0-9a-f]{64}$ ]]
+  [[ "$HUB_SERVER_PULL_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-server-runtime:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]]
   docker pull "$HUB_SERVER_PULL_IMAGE" >/dev/null
   architecture="$(docker image inspect --format '{{.Architecture}}' "$HUB_SERVER_PULL_IMAGE")"
   operating_system="$(docker image inspect --format '{{.Os}}' "$HUB_SERVER_PULL_IMAGE")"

@@ -206,8 +206,8 @@ require_manager() {
 
 verify_image() {
   local architecture operating_system expected_repo_digest repo_digests
-  [[ "$HUB_WEB_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web@sha256:[0-9a-f]{64}$ ]]
-  [[ "$HUB_WEB_PULL_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]]
+  [[ "$HUB_WEB_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web-runtime@sha256:[0-9a-f]{64}$ ]]
+  [[ "$HUB_WEB_PULL_IMAGE" =~ ^ghcr\.io/starsnap/starsnap-log-web-runtime:[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ ]]
   docker pull "$HUB_WEB_PULL_IMAGE" >/dev/null
   architecture="$(docker image inspect --format '{{.Architecture}}' "$HUB_WEB_PULL_IMAGE")"
   operating_system="$(docker image inspect --format '{{.Os}}' "$HUB_WEB_PULL_IMAGE")"

@@ -183,11 +183,9 @@ verify_from_caddy() {
 }
 
 verify_caddy_route() {
-  local container
-  container="$(single_running_container "$caddy_service")"
-  docker exec "$container" wget --quiet --no-check-certificate \
-    --header='Host: log.starsnap.kr' --output-document=- \
-    'https://127.0.0.1/' | grep -Fq '<title>StarSnap Log Dashboard</title>'
+  curl --silent --show-error --fail --insecure \
+    --resolve 'log.starsnap.kr:443:127.0.0.1' \
+    'https://log.starsnap.kr/' | grep -Fq '<title>StarSnap Log Dashboard</title>'
 }
 
 ensure_target_services() {
@@ -310,6 +308,7 @@ trap 'rollback_on_error 130' INT
 trap 'rollback_on_error 143' TERM
 
 test "${ALLOW_LOG_SERVICE_RENAME:-}" = 'RENAME-LOG-SERVICES-192.168.1.103'
+command -v curl >/dev/null
 bash deploy/platform/validate-platform.sh
 service_exists "$source_server"
 service_exists "$source_web"

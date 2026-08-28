@@ -229,6 +229,13 @@ bash() {
 }
 
 wget() { printf '{"status":"UP"}\n'; }
+curl() {
+  if [[ "$(read_state route-result)" == pass ]]; then
+    printf '<title>StarSnap Log Dashboard</title>\n'
+  else
+    return 1
+  fi
+}
 sleep() { :; }
 
 run_rename() {

@@ -197,7 +197,7 @@ function AreaMultiPicker({
       disabled={disabled}
       aria-describedby={`${descriptionId}${error ? ` ${errorId}` : ''}`}
       aria-invalid={Boolean(error) || undefined}
-      className={disabled ? 'opacity-70' : undefined}
+      className={disabled ? 'min-w-0 max-w-full opacity-70' : 'min-w-0 max-w-full'}
     >
       <legend className="text-sm font-semibold">{legend}</legend>
       <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-[var(--ss-text-muted)]">{description}</p>
@@ -206,32 +206,32 @@ function AreaMultiPicker({
         id={`${id}-province`}
         value={provinceCode}
         onChange={(event) => setProvinceCode(event.target.value as BidProvinceCode | '')}
-        className="star-control mt-1.5 min-h-11 w-full px-3 text-sm sm:max-w-sm"
+        className="star-control mt-1.5 min-h-11 w-full min-w-0 max-w-full px-3 text-sm sm:max-w-sm"
       >
         <option value="">시·도 선택</option>
         {bidProvinceOptions.map((province) => <option key={province.code} value={province.code}>{province.label}</option>)}
       </select>
 
       {provinceCode ? (
-        <div className="mt-3 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs font-semibold text-[var(--ss-text-soft)]">시·군·구 선택 · {selectedInProvince.length}/{provinceAreas.length}</p>
+        <div className="mt-3 min-w-0 max-w-full rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] p-3">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 text-xs font-semibold text-[var(--ss-text-soft)]">시·군·구 선택 · {selectedInProvince.length}/{provinceAreas.length}</p>
             <button
               type="button"
               onClick={toggleCurrentProvince}
-              className="star-secondary-button min-h-11 shrink-0 px-3 text-xs"
+              className="star-secondary-button min-h-11 w-full shrink-0 px-3 text-xs sm:w-auto"
             >
               {allInProvinceSelected ? '현재 시·도 전체 해제' : '현재 시·도 전체 선택'}
             </button>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
+          <div data-area-grid className="mt-3 grid min-w-0 grid-cols-1 gap-2 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
             {provinceAreas.map((area) => {
               const inputId = `${id}-area-${area.code}`;
               return (
                 <label
                   key={area.code}
                   htmlFor={inputId}
-                  className={`flex min-h-11 items-center gap-3 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] px-3 py-2 text-sm font-semibold transition has-[:checked]:border-[var(--ss-brand)] has-[:checked]:bg-[var(--ss-brand-soft)] ${disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:border-[var(--ss-border-strong)]'}`}
+                  className={`flex min-h-11 w-full min-w-0 items-center gap-3 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] px-3 py-2 text-sm font-semibold transition has-[:checked]:border-[var(--ss-brand)] has-[:checked]:bg-[var(--ss-brand-soft)] ${disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:border-[var(--ss-border-strong)]'}`}
                 >
                   <input
                     id={inputId}
@@ -239,9 +239,9 @@ function AreaMultiPicker({
                     checked={selectedCodes.includes(area.code)}
                     onChange={() => onChange(toggleAreaCode(selectedCodes, area.code))}
                     aria-label={area.fullName}
-                    className="h-4 w-4 accent-[var(--ss-brand)]"
+                    className="h-4 w-4 shrink-0 accent-[var(--ss-brand)]"
                   />
-                  <span>{area.localName}</span>
+                  <span className="min-w-0 break-words leading-5">{area.localName}</span>
                 </label>
               );
             })}
@@ -271,7 +271,7 @@ function TablePanel({
   children: ReactNode;
 }) {
   return (
-    <section className="panel overflow-hidden p-0">
+    <section className="panel min-w-0 max-w-full overflow-hidden p-0">
       <div className="flex flex-col gap-2 border-b border-[var(--ss-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-extrabold">{title}</h2>
@@ -282,7 +282,7 @@ function TablePanel({
       <p className="border-b border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] px-5 py-2 text-[11px] font-medium text-[var(--ss-text-muted)] lg:hidden">
         표를 좌우로 밀어 전체 정보를 확인하세요.
       </p>
-      <div className="overflow-x-auto">{children}</div>
+      <div className="min-w-0 max-w-full overflow-x-auto">{children}</div>
     </section>
   );
 }
@@ -500,7 +500,7 @@ function BidderTargetAreaForm({
   }
 
   return (
-    <form onSubmit={submit} className="panel space-y-4" aria-labelledby="bidder-target-areas-title">
+    <form onSubmit={submit} className="panel min-w-0 max-w-full space-y-4" aria-labelledby="bidder-target-areas-title">
       <div>
         <p className="eyebrow">BIDDING AREA</p>
         <h2 id="bidder-target-areas-title" className="mt-1 text-base font-extrabold">입찰 관심지역</h2>
@@ -565,9 +565,9 @@ export function PartnersView({ data, role, pendingAction, searchQuery, onMutate 
   }
 
   return (
-    <div className={`grid gap-4 ${isBidder ? '' : 'xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start'}`}>
+    <div className={`grid min-w-0 max-w-full gap-4 ${isBidder ? '' : 'xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start'}`}>
       {isBidder ? <BidderTargetAreaForm key={data.tenant.code} data={data} role={role} pendingAction={pendingAction} onMutate={onMutate} /> : null}
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         <FeedbackMessage feedback={feedback} />
         <TablePanel
           title={isBidder ? '관심지역 연결 대리점' : '연결 업체'}

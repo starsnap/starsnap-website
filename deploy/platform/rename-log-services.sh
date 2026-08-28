@@ -25,6 +25,7 @@ target_creation_attempted=0
 caddy_update_attempted=0
 source_server_removal_attempted=0
 source_web_removal_attempted=0
+source_services_healthy=0
 migration_complete=0
 
 service_exists() {
@@ -324,28 +325,46 @@ trap 'rollback_on_error 143' TERM
 test "${ALLOW_LOG_SERVICE_RENAME:-}" = 'RENAME-LOG-SERVICES-192.168.1.103'
 command -v curl >/dev/null
 bash deploy/platform/validate-platform.sh
-service_exists "$source_server"
-service_exists "$source_web"
-service_core_health_ok "$source_server" server
-service_core_health_ok "$source_web" web
 service_exists "$caddy_service"
 previous_caddy_config="$(caddy_config_name)"
 previous_caddy_hash="$(service_task_hash "$caddy_service")"
 readonly previous_caddy_config previous_caddy_hash
 caddy_core_health_ok "$previous_caddy_config"
 compute_new_caddy_config_identity
-server_image="$(docker service inspect \
-  --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$source_server")"
-web_image="$(docker service inspect \
-  --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$source_web")"
-readonly server_image web_image
 
 if service_exists "$target_server"; then
   target_server_preexisting=1
-  test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_server")" = "$server_image"
 fi
 if service_exists "$target_web"; then
   target_web_preexisting=1
+fi
+
+if service_exists "$source_server" && service_exists "$source_web" \
+  && service_core_health_ok "$source_server" server \
+  && service_core_health_ok "$source_web" web; then
+  source_services_healthy=1
+  server_image="$(docker service inspect \
+    --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$source_server")"
+  web_image="$(docker service inspect \
+    --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$source_web")"
+else
+  test "$target_server_preexisting" -eq 1
+  test "$target_web_preexisting" -eq 1
+  test "$previous_caddy_config" = "$new_caddy_config"
+  server_image="$(docker service inspect \
+    --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_server")"
+  web_image="$(docker service inspect \
+    --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_web")"
+  echo 'Resuming Log rename from verified exact-name services and Caddy route.'
+fi
+readonly server_image web_image
+test "$server_image" = "$HUB_SERVER_IMAGE"
+test "$web_image" = "$HUB_WEB_IMAGE"
+
+if (( target_server_preexisting == 1 )); then
+  test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_server")" = "$server_image"
+fi
+if (( target_web_preexisting == 1 )); then
   test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_web")" = "$web_image"
 fi
 if (( target_server_preexisting == 0 || target_web_preexisting == 0 )); then
@@ -354,10 +373,12 @@ fi
 ensure_target_services
 wait_for_service "$target_server" server completed
 wait_for_service "$target_web" web completed
-test "$(docker inspect --format '{{.Image}}' "$(single_running_container "$target_server")")" \
-  = "$(docker inspect --format '{{.Image}}' "$(single_running_container "$source_server")")"
-test "$(docker inspect --format '{{.Image}}' "$(single_running_container "$target_web")")" \
-  = "$(docker inspect --format '{{.Image}}' "$(single_running_container "$source_web")")"
+if (( source_services_healthy == 1 )); then
+  test "$(docker inspect --format '{{.Image}}' "$(single_running_container "$target_server")")" \
+    = "$(docker inspect --format '{{.Image}}' "$(single_running_container "$source_server")")"
+  test "$(docker inspect --format '{{.Image}}' "$(single_running_container "$target_web")")" \
+    = "$(docker inspect --format '{{.Image}}' "$(single_running_container "$source_web")")"
+fi
 verify_from_caddy
 
 docker pull "$caddy_image" >/dev/null
@@ -374,12 +395,16 @@ if [[ "$previous_caddy_config" != "$new_caddy_config" ]]; then
 fi
 verify_caddy_route
 
-source_web_removal_attempted=1
-docker service rm "$source_web" >/dev/null
-wait_for_absent "$source_web"
-source_server_removal_attempted=1
-docker service rm "$source_server" >/dev/null
-wait_for_absent "$source_server"
+if service_exists "$source_web"; then
+  source_web_removal_attempted=1
+  docker service rm "$source_web" >/dev/null
+  wait_for_absent "$source_web"
+fi
+if service_exists "$source_server"; then
+  source_server_removal_attempted=1
+  docker service rm "$source_server" >/dev/null
+  wait_for_absent "$source_server"
+fi
 
 docker service update --detach=true \
   --publish-add 'published=8081,target=8081,protocol=tcp,mode=host' \

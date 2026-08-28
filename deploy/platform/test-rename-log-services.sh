@@ -212,7 +212,7 @@ docker() {
 bash() {
   if [[ "${1:-}" == deploy/platform/validate-platform.sh ]]; then return 0; fi
   if [[ "${1:-}" == deploy/platform/ensure-log-services.sh ]]; then
-    if [[ "$(read_state old-server)" == 1 && "$(read_state old-web)" == 1 ]]; then
+    if [[ "${LOG_SERVER_SERVICE_NAME:-}" == starsnap-log-server ]]; then
       write_state new-server 1
       write_state new-web 1
       record_event targets-create
@@ -256,6 +256,8 @@ run_rename() {
     export HUB_INGEST_SECRET_NAME=hub-ingest-v1
     export CLOUDFLARE_ACCESS_TEAM_DOMAIN_SECRET_NAME=cf-team-v1
     export CLOUDFLARE_ACCESS_AUDIENCE_SECRET_NAME=cf-audience-v1
+    export HUB_SERVER_IMAGE="$FAKE_SERVER_IMAGE"
+    export HUB_WEB_IMAGE="$FAKE_WEB_IMAGE"
     source deploy/platform/rename-log-services.sh
   ) >"$output_file" 2>&1
 }
@@ -364,5 +366,22 @@ test "$(read_state new-web)" = 1
 test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
 assert_contains "$precutover_caddy_output" 'Keeping new Log services online because rollback dependencies are not healthy.'
 assert_contains "$precutover_caddy_output" 'CRITICAL: Log service rename rollback could not be fully verified.'
+
+reset_state pass normal normal normal
+write_state old-server 0
+write_state old-web 0
+write_state new-server 1
+write_state new-web 1
+write_state caddy-config starsnap-company_caddyfile_0000000000000000
+resume_output="$(state resume.out)"
+run_rename "$resume_output"
+test "$(read_state old-server)" = 0
+test "$(read_state old-web)" = 0
+test "$(read_state new-server)" = 1
+test "$(read_state new-web)" = 1
+test "$(read_state target-port)" = 1
+test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
+assert_contains "$resume_output" 'Resuming Log rename from verified exact-name services and Caddy route.'
+assert_contains "$resume_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
 
 echo 'Log service rename tests passed.'

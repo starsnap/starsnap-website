@@ -14,6 +14,7 @@ on:
           - diagnose-eat-container
           - deploy-erp
           - deploy-hub
+          - deploy-hub-server
           - rename-log-services
           - preflight
           - stage
@@ -27,7 +28,7 @@ on:
           - verify-ollama
           - stop-target
       confirmation:
-        description: Required phrase for deploy-erp, deploy-hub, rename-log-services, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
+        description: Required phrase for deploy-erp, deploy-hub, deploy-hub-server, rename-log-services, activate, cleanup-transfer, switch-log, switch-ollama, or stop-target; leave empty for other phases
         required: false
         default: ""
         type: string
@@ -61,6 +62,7 @@ jobs:
       HUB_WEB_IMAGE: ${{ vars.PLATFORM_HUB_WEB_IMAGE }}
       HUB_WEB_PULL_IMAGE: ${{ vars.PLATFORM_HUB_WEB_PULL_IMAGE }}
       HUB_SERVER_IMAGE: ${{ vars.PLATFORM_HUB_SERVER_IMAGE }}
+      HUB_SERVER_PULL_IMAGE: ${{ vars.PLATFORM_HUB_SERVER_PULL_IMAGE }}
       ERP_WEB_IMAGE: ${{ vars.PLATFORM_ERP_WEB_IMAGE }}
       ERP_SMTP_MAILER_IMAGE: ${{ vars.PLATFORM_ERP_SMTP_MAILER_IMAGE }}
       ERP_EMBEDDING_WORKER_IMAGE: ${{ vars.PLATFORM_ERP_EMBEDDING_WORKER_IMAGE }}
@@ -111,7 +113,7 @@ jobs:
           fi
 
       - name: Sign in to GHCR for private platform images
-        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' }}
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' || inputs.phase == 'deploy-hub' || inputs.phase == 'deploy-hub-server' }}
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
@@ -119,17 +121,6 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GHCR_TOKEN"
-          printf '%s' "$GHCR_TOKEN" \
-            | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
-
-      - name: Sign in to GHCR for Hub web release
-        if: ${{ inputs.phase == 'deploy-hub' }}
-        shell: bash
-        env:
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.HUB_RELEASE_GHCR_TOKEN }}
-        run: |
-          set -euo pipefail
           printf '%s' "$GHCR_TOKEN" \
             | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
 
@@ -177,6 +168,13 @@ jobs:
         env:
           ALLOW_HUB_DEPLOY: ${{ inputs.confirmation }}
         run: bash deploy/platform/deploy-hub.sh
+
+      - name: Deploy and verify Hub server only
+        if: ${{ inputs.phase == 'deploy-hub-server' }}
+        shell: bash
+        env:
+          ALLOW_HUB_SERVER_DEPLOY: ${{ inputs.confirmation }}
+        run: bash deploy/platform/deploy-hub-server.sh
 
       - name: Rename Log Swarm services
         if: ${{ inputs.phase == 'rename-log-services' }}

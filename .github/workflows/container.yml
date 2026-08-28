@@ -109,6 +109,8 @@ jobs:
           bash -n deploy/platform/test-deploy-erp.sh
           bash -n deploy/platform/deploy-hub.sh
           bash -n deploy/platform/test-deploy-hub.sh
+          bash -n deploy/platform/deploy-hub-server.sh
+          bash -n deploy/platform/test-deploy-hub-server.sh
           bash -n deploy/platform/ensure-log-services.sh
           bash -n deploy/platform/test-ensure-log-services.sh
           bash -n deploy/platform/rename-log-services.sh
@@ -135,7 +137,13 @@ jobs:
           node --check deploy/platform/verify-log-service-spec.mjs
           node --check deploy/platform/test-verify-log-service-spec.mjs
           node deploy/platform/test-verify-log-service-spec.mjs
+          node --check deploy/platform/update-log-service-cas.mjs
+          node --check deploy/platform/test-update-log-service-cas.mjs
+          node --check deploy/platform/canonical-json-sha256.mjs
+          node --check deploy/platform/restore-log-service-cas.mjs
+          node deploy/platform/test-update-log-service-cas.mjs
           bash deploy/platform/test-deploy-hub.sh
+          bash deploy/platform/test-deploy-hub-server.sh
           bash deploy/platform/test-ensure-log-services.sh
           bash deploy/platform/test-rename-log-services.sh
           python -c 'import ast, pathlib; ast.parse(pathlib.Path("deploy/platform/relay-server.py").read_text(encoding="utf-8"))'
@@ -153,6 +161,8 @@ jobs:
             deploy/platform/test-deploy-erp.sh \
             deploy/platform/deploy-hub.sh \
             deploy/platform/test-deploy-hub.sh \
+            deploy/platform/deploy-hub-server.sh \
+            deploy/platform/test-deploy-hub-server.sh \
             deploy/platform/ensure-log-services.sh \
             deploy/platform/test-ensure-log-services.sh \
             deploy/platform/rename-log-services.sh \

@@ -96,13 +96,28 @@ docker exec "$web_container" node -e '
   url.searchParams.set("SD_SCHUL_CODE", process.argv[2]);
   url.searchParams.set("MLSV_FROM_YMD", `${year}0101`);
   url.searchParams.set("MLSV_TO_YMD", `${year}1231`);
-  fetch(url, {
-    headers: { accept: "application/json" },
-    redirect: "manual",
-    referrerPolicy: "no-referrer",
-    signal: AbortSignal.timeout(10_000),
-  }).then(async (response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  (async () => {
+    let response;
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        response = await fetch(url, {
+          headers: { accept: "application/json" },
+          redirect: "manual",
+          referrerPolicy: "no-referrer",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) break;
+        const status = response.status;
+        await response.body?.cancel();
+        lastError = new Error(`HTTP ${status}`);
+        if (status < 500 || status >= 600) break;
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1_000));
+    }
+    if (!response?.ok) throw lastError ?? new Error("NEIS request failed");
     const payload = await response.json();
     let result = payload?.RESULT;
     if (!result && Array.isArray(payload?.mealServiceDietInfo)) {
@@ -116,7 +131,7 @@ docker exec "$web_container" node -e '
       throw new Error(`Unexpected NEIS result: ${result?.CODE ?? "missing"}`);
     }
     console.log(`Authenticated NEIS meal lookup verified: code=${result.CODE}`);
-  }).catch((error) => {
+  })().catch((error) => {
     console.error(`Authenticated NEIS meal lookup failed: ${error.message}`);
     process.exit(1);
   });

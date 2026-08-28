@@ -206,7 +206,7 @@ function AreaMultiPicker({
         id={`${id}-province`}
         value={provinceCode}
         onChange={(event) => setProvinceCode(event.target.value as BidProvinceCode | '')}
-        className="star-control mt-1.5 min-h-11 w-full px-3 text-sm"
+        className="star-control mt-1.5 min-h-11 w-full px-3 text-sm sm:max-w-sm"
       >
         <option value="">시·도 선택</option>
         {bidProvinceOptions.map((province) => <option key={province.code} value={province.code}>{province.label}</option>)}
@@ -224,7 +224,7 @@ function AreaMultiPicker({
               {allInProvinceSelected ? '현재 시·도 전체 해제' : '현재 시·도 전체 선택'}
             </button>
           </div>
-          <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
             {provinceAreas.map((area) => {
               const inputId = `${id}-area-${area.code}`;
               return (
@@ -565,7 +565,8 @@ export function PartnersView({ data, role, pendingAction, searchQuery, onMutate 
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+    <div className={`grid gap-4 ${isBidder ? '' : 'xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start'}`}>
+      {isBidder ? <BidderTargetAreaForm key={data.tenant.code} data={data} role={role} pendingAction={pendingAction} onMutate={onMutate} /> : null}
       <div className="space-y-3">
         <FeedbackMessage feedback={feedback} />
         <TablePanel
@@ -616,9 +617,7 @@ export function PartnersView({ data, role, pendingAction, searchQuery, onMutate 
           </table>
         </TablePanel>
       </div>
-      {isBidder
-        ? <BidderTargetAreaForm key={data.tenant.code} data={data} role={role} pendingAction={pendingAction} onMutate={onMutate} />
-        : <PartnerForm key={data.tenant.code} data={data} role={role} pendingAction={pendingAction} onMutate={onMutate} />}
+      {!isBidder ? <PartnerForm key={data.tenant.code} data={data} role={role} pendingAction={pendingAction} onMutate={onMutate} /> : null}
     </div>
   );
 }

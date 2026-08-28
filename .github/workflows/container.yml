@@ -20,6 +20,11 @@ on:
       - "vite.config.ts"
   workflow_dispatch:
     inputs:
+      deploy:
+        description: Deploy this exact commit to the StarSnap website and Caddy edge
+        required: true
+        default: false
+        type: boolean
       verify_only:
         description: Run only public DNS, TLS, redirect, site, and API verification
         required: false
@@ -251,6 +256,8 @@ jobs:
       - container-smoke
       - promote
     if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy &&
       github.repository == 'starsnap/starsnap-website' &&
       github.ref == 'refs/heads/main' &&
       vars.SWARM_DEPLOY_ENABLED == 'true'

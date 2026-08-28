@@ -2,7 +2,8 @@
 
 The container workflow builds one multi-platform image, publishes its immutable
 manifest digest, smoke-tests that exact digest on AMD64 and ARM64, promotes the
-verified digest to `latest`, and then deploys the digest to Docker Swarm.
+verified digest to `latest`, and deploys the digest to Docker Swarm only for an
+explicit manual dispatch with `deploy=true`. A push never mutates production.
 
 ## GitHub configuration
 

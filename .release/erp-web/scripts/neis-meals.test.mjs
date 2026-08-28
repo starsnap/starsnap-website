@@ -9,6 +9,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 let viteServer;
 let NeisApiError;
 let fetchNeisMeals;
+let internalNeisHealth;
 let lookupNeisMealsForBidder;
 let NeisMealLookupError;
 let parseNeisMealQuery;
@@ -29,13 +30,14 @@ before(async () => {
       },
       load(id) {
         return id === '\0neis-cloudflare-test-double'
-          ? 'export const env = {}; export function waitUntil() {}'
+          ? `export const env = { ERP_EMBEDDING_WORKER_TOKEN: '${'t'.repeat(32)}' }; export function waitUntil() {}`
           : null;
       },
     }],
   });
   ({ NeisApiError, fetchNeisMeals, parseNeisMealResponse } = await viteServer.ssrLoadModule('/db/neis-meal-client.ts'));
   ({ NeisMealLookupError, lookupNeisMealsForBidder } = await viteServer.ssrLoadModule('/db/neis-meal-service.ts'));
+  ({ POST: internalNeisHealth } = await viteServer.ssrLoadModule('/app/api/internal/neis/health/route.ts'));
   ({ parseNeisMealQuery } = await viteServer.ssrLoadModule('/app/lib/neis-meal-validation.ts'));
 });
 after(async () => {
@@ -166,6 +168,15 @@ test('requires the server-side key and validates date ranges before lookup', asy
     })).message,
     /계약 학교/,
   );
+});
+
+test('protects the internal NEIS health endpoint with the existing worker bearer token', async () => {
+  const response = await internalNeisHealth(new Request('http://localhost/api/internal/neis/health', {
+    method: 'POST',
+    headers: { authorization: 'Bearer wrong-token' },
+  }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { ok: false, message: '인증이 필요합니다.' });
 });
 
 test('enforces an owned qualifying contract and its date boundaries before upstream lookup', async () => {

@@ -9,7 +9,7 @@ const StarIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
     className={className}
     height={96}
-    loading="eager"
+    priority
     src="/icon-96.png"
     unoptimized
     width={96}
@@ -19,6 +19,7 @@ const StarIcon = ({ className }: { className?: string }) => (
 export default function Home() {
   return (
     <>
+      <a className="skip-link" href="#main-content">본문으로 건너뛰기</a>
       <header className="site-header">
         <a className="wordmark" href="#top" aria-label="StarSnap 홈">
           <StarIcon className="brand-mark" />
@@ -27,17 +28,17 @@ export default function Home() {
         <nav className="site-nav" aria-label="주요 메뉴">
           <a href="#services">서비스</a>
           <a href="#company">회사 소개</a>
-          <a href="#contact">문의</a>
+          <a href="#contact">서비스 시작</a>
         </nav>
         <div className="header-actions">
           <ThemeToggle />
-          <a className="header-cta" href="#contact">
-            협업 문의 <ArrowUpRight />
+          <a className="header-cta" href="#services">
+            서비스 보기 <ArrowUpRight />
           </a>
         </div>
       </header>
 
-      <main>
+      <main id="main-content">
       <section className="hero" id="top">
         <div className="hero-copy">
           <p className="eyebrow">
@@ -187,14 +188,18 @@ export default function Home() {
       <section className="contact-section" id="contact">
         <div className="contact-copy">
           <p className="section-kicker">Start a conversation</p>
-          <h2>더 나은 연결과 운영,<br />StarSnap과 시작하세요.</h2>
+          <h2>더 나은 연결과 운영,<br />대표 서비스에서 시작하세요.</h2>
         </div>
         <div className="contact-side">
-          <p>서비스 도입이나 협업에 대해 궁금한 점이 있다면 StarSnap의 가능성을 함께 살펴보세요.</p>
-          <a className="button contact-button" href="#services">
-            대표 서비스 보기 <ArrowUpRight />
-          </a>
-          <small>문의 채널은 회사 연락처 확정 후 연결됩니다.</small>
+          <p>SNS에서 관심사를 연결하고, ERP에서 팀의 업무 흐름을 정리해 보세요.</p>
+          <div className="contact-actions">
+            <a className="button contact-button" href="https://sns.starsnap.kr">
+              SNS 시작하기 <ArrowUpRight />
+            </a>
+            <a className="button contact-button contact-button-secondary" href="https://erp.starsnap.kr">
+              ERP 살펴보기 <ArrowUpRight />
+            </a>
+          </div>
         </div>
         <div className="contact-decoration" aria-hidden="true">
           <span /><span /><span />
@@ -209,7 +214,7 @@ export default function Home() {
           <span>StarSnap</span>
         </a>
         <p>SNS · ERP · Digital Products</p>
-        <p>© 2026 StarSnap. All rights reserved.</p>
+        <p><a href="https://starsnap.kr">starsnap.kr</a> · © 2026 StarSnap</p>
       </footer>
     </>
   );

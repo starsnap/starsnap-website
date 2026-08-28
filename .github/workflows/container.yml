@@ -256,6 +256,7 @@ jobs:
       vars.SWARM_DEPLOY_ENABLED == 'true'
     runs-on:
       group: starsnap-production
+      labels: starsnap-swarm
     environment: production
     timeout-minutes: 15
 

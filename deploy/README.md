@@ -9,9 +9,8 @@ verified digest to `latest`, and then deploys the digest to Docker Swarm.
 The deploy job is disabled until all of the following exist:
 
 - An organization self-hosted runner on the ARM64 Swarm manager in the
-  `starsnap-production` runner group. The deploy job schedules by this group
-  alone; the `starsnap-swarm` custom runner label is operational inventory
-  metadata and is not part of `runs-on` matching.
+  `starsnap-production` runner group with the `starsnap-swarm` label. Production
+  jobs require both the group and label.
 - The runner group's repository access must explicitly include only the StarSnap
   repositories that own a production service. Its workflow allowlist must pin
   the following repository-owned workflows to their protected default branch:
@@ -23,9 +22,12 @@ The deploy job is disabled until all of the following exist:
   - `starsnap/starsnap-log-web/.github/workflows/container.yml@refs/heads/master`
   - `starsnap/starsnap-log-server/.github/workflows/container.yml@refs/heads/master`
   - `starsnap/starsnap-erp-web/.github/workflows/container.yml@refs/heads/main`
-- A repository variable named `SWARM_DEPLOY_ENABLED` set to `true`.
-- A GitHub environment named `production` that permits only `main` and follows
-  the organization's chosen reviewer and administrator-bypass policy.
+- A repository variable named `SWARM_DEPLOY_ENABLED` in each repository. Keep it
+  unset until all other controls are verified, then set it to `true` last.
+- A GitHub environment named `production` in every listed repository. It must
+  permit only that repository's protected default branch (`main` or `master` as
+  pinned above) and follow the organization's chosen reviewer and
+  administrator-bypass policy.
 
 The runner registration token is one-time bootstrap material. Never commit it,
 write it into a stack file, or leave it in a long-lived service environment.
@@ -60,9 +62,9 @@ updates disabled.
 The deploy runner has Swarm-manager-level authority. Keep its runner group
 restricted to the exact workflows above, never add pull-request or fork triggers
 to a deploy job, and protect workflow changes on every listed default branch
-before granting additional collaborators write access. Keep the group limited to the intended
-ARM64 manager runner; group membership, not a combined custom-label match, is the
-GitHub Actions deployment routing boundary. The separate Docker node label
+before granting additional collaborators write access. Keep the group limited to
+the intended ARM64 manager runner. The runner group and `starsnap-swarm` label
+together form the GitHub Actions routing boundary. The separate Docker node label
 `starsnap.actions-runner=true` is the Swarm placement boundary for both company
 services. The deployment preflight requires the current manager to carry that
 label and requires it to be the only labeled node in the Swarm.

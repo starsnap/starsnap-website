@@ -217,6 +217,30 @@ option {
   box-shadow: 0 0 0 0 transparent;
 }
 
+.star-control[type='date'] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* WebKit 301648: iOS 26 adds date-input padding outside width: 100%. */
+@supports (-webkit-touch-callout: none) {
+  .star-control[type='date'] {
+    padding-inline: 0;
+  }
+
+  .star-control[type='date']::-webkit-date-and-time-value {
+    min-width: 0;
+    padding-inline-start: var(--ss-space-3);
+    text-align: left;
+  }
+
+  .star-control[type='date']::-webkit-calendar-picker-indicator {
+    margin-inline-end: var(--ss-space-3);
+  }
+}
+
 .star-control:hover:not(:disabled) {
   border-color: var(--ss-text-muted);
 }

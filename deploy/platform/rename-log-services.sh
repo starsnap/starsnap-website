@@ -7,6 +7,7 @@ readonly source_server='starsnap-hub_server'
 readonly source_web='starsnap-hub_web'
 readonly target_server='starsnap-log-server'
 readonly target_web='starsnap-log-web'
+readonly manager_address='192.168.1.103'
 readonly caddy_service='starsnap-company_caddy'
 readonly caddy_image='docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d'
 readonly caddy_config_file='deploy/Caddyfile'
@@ -183,8 +184,8 @@ verify_from_caddy() {
 }
 
 verify_caddy_route() {
-  curl --silent --show-error --fail --insecure \
-    --resolve 'log.starsnap.kr:443:127.0.0.1' \
+  curl --silent --show-error --fail --insecure --noproxy '*' \
+    --resolve "log.starsnap.kr:443:$manager_address" \
     'https://log.starsnap.kr/' | grep -Fq '<title>StarSnap Log Dashboard</title>'
 }
 
@@ -374,7 +375,7 @@ wait_for_service "$target_server" server completed
 wait_for_service "$target_web" web completed
 verify_from_caddy
 verify_caddy_route
-wget --quiet --output-document=- 'http://192.168.1.103:8081/actuator/health' \
+wget --quiet --output-document=- "http://$manager_address:8081/actuator/health" \
   | grep -Fq '"status":"UP"'
 
 migration_complete=1

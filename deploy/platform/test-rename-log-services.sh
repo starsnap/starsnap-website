@@ -230,6 +230,9 @@ bash() {
 
 wget() { printf '{"status":"UP"}\n'; }
 curl() {
+  grep -Fq -- '--noproxy *' <<<"$*"
+  grep -Fq -- '--resolve log.starsnap.kr:443:192.168.1.103' <<<"$*"
+  grep -Fq -- 'https://log.starsnap.kr/' <<<"$*"
   if [[ "$(read_state route-result)" == pass ]]; then
     printf '<title>StarSnap Log Dashboard</title>\n'
   else

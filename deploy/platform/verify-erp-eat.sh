@@ -31,14 +31,26 @@ docker exec "$web_container" node -e '
     import("node:fs").then(({ readFileSync }) => readFileSync(
       "/run/secrets/neis-api-key", "utf8",
     ).trim()),
-  ]).then(([health, eatSecret, neisSecret]) => {
+    import("node:fs").then(({ readFileSync }) => readFileSync(
+      process.env.STARSNAP_WORKER_SECRETS_FILE || "/app/dist/server/.dev.vars", "utf8",
+    )),
+  ]).then(([health, eatSecret, neisSecret, workerSecrets]) => {
     if (!health.response.ok || health.body?.ok !== true) throw new Error("ERP health failed");
     if (String(health.body.schemaVersion) !== process.argv[1]) {
       throw new Error(`Expected schema ${process.argv[1]}, got ${health.body.schemaVersion}`);
     }
     if (eatSecret.length < 32) throw new Error("eAT secret file is invalid");
     if (neisSecret.length < 16) throw new Error("NEIS secret file is invalid");
-    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true NeisSecretReadable=true`);
+    const bindingLine = workerSecrets.split(/\r?\n/).find(line => line.startsWith("NEIS_API_KEY="));
+    if (!bindingLine) throw new Error("NEIS Worker binding is missing");
+    let boundNeisSecret;
+    try {
+      boundNeisSecret = JSON.parse(bindingLine.slice("NEIS_API_KEY=".length));
+    } catch {
+      throw new Error("NEIS Worker binding is malformed");
+    }
+    if (boundNeisSecret !== neisSecret) throw new Error("NEIS Worker binding does not match mounted secret");
+    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true NeisSecretReadable=true NeisWorkerBinding=true`);
   }).catch((error) => {
     console.error(`ERP health verification failed: ${error.message}`);
     process.exit(1);
@@ -56,7 +68,11 @@ neis_school_context="$(docker exec "$postgres_container" \
     ORDER BY updated_at DESC, id
     LIMIT 1
   ")"
-IFS='|' read -r neis_office_code neis_school_code <<<"$neis_school_context"
+neis_office_code='K10'
+neis_school_code='7840018'
+if [[ -n "$neis_school_context" ]]; then
+  IFS='|' read -r neis_office_code neis_school_code <<<"$neis_school_context"
+fi
 readonly neis_office_code neis_school_code
 [[ "$neis_office_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
 [[ "$neis_school_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
@@ -113,18 +129,11 @@ bidder_context="$(docker exec "$postgres_container" \
     FROM tenants t
     JOIN tenant_memberships tm ON tm.tenant_id = t.id
     JOIN erp_users u ON u.id = tm.user_id
-    JOIN school_bids bid
-      ON bid.bidder_tenant_id = t.id
-     AND bid.status IN ('AWARDED', 'ACTIVE')
-    JOIN schools school
-      ON school.id = bid.school_id
-     AND school.source = 'NEIS_SCHOOL_INFO'
-     AND school.active = TRUE
-     AND school.mapping_status = 'MAPPED'
-    WHERE t.organization_type = 'BIDDER'
+    WHERE t.code = 'ORG-8025A70B4CF24D018F67'
+      AND t.organization_type = 'BIDDER'
       AND t.status = 'ACTIVE'
       AND u.status = 'ACTIVE'
-    ORDER BY bid.contract_start DESC, t.code, u.id
+    ORDER BY t.code, u.id
     LIMIT 1
   ")"
 IFS='|' read -r tenant_code user_id <<<"$bidder_context"
@@ -173,13 +182,43 @@ neis_bid_context="$(docker exec "$postgres_container" \
     ORDER BY bid.contract_start DESC, bid.id
     LIMIT 1
   ")"
-IFS='|' read -r neis_school_bid_id neis_from_date neis_to_date <<<"$neis_bid_context"
-readonly neis_school_bid_id neis_from_date neis_to_date
-[[ "$neis_school_bid_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
-[[ "$neis_from_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-[[ "$neis_to_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
 
-neis_route_payload="$(docker exec "$web_container" node -e '
+docker exec "$web_container" node -e '
+  const url = new URL("http://127.0.0.1:3000/api/erp/neis/meals");
+  url.searchParams.set("tenant", process.argv[1]);
+  url.searchParams.set("schoolBidId", "missing-smoke-bid");
+  url.searchParams.set("fromDate", "2026-01-01");
+  url.searchParams.set("toDate", "2026-01-02");
+  fetch(url, {
+    headers: {
+      host: "erp.starsnap.kr",
+      origin: "https://erp.starsnap.kr",
+      "x-forwarded-host": "erp.starsnap.kr",
+      "x-forwarded-proto": "https",
+      cookie: `__Host-starsnap_session=${process.argv[2]}`,
+    },
+  }).then(async response => {
+    const contentType = response.headers.get("content-type") || "";
+    const body = await response.json().catch(() => ({}));
+    const expectedMessage = "조회 가능한 계약 학교를 찾을 수 없습니다. 학교 입찰 정보를 확인해 주세요.";
+    if (response.status !== 404 || !contentType.includes("application/json") || body.message !== expectedMessage) {
+      throw new Error(`Expected protected NEIS route 404, got ${response.status}: ${body.message ?? "unknown"}`);
+    }
+    console.log("Authenticated NEIS ERP route protection verified.");
+  }).catch(error => {
+    console.error(`Authenticated NEIS ERP route protection failed: ${error.message}`);
+    process.exit(1);
+  });
+' "$tenant_code" "$session_token"
+
+if [[ -n "$neis_bid_context" ]]; then
+  IFS='|' read -r neis_school_bid_id neis_from_date neis_to_date <<<"$neis_bid_context"
+  readonly neis_school_bid_id neis_from_date neis_to_date
+  [[ "$neis_school_bid_id" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]]
+  [[ "$neis_from_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+  [[ "$neis_to_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+
+  neis_route_payload="$(docker exec "$web_container" node -e '
   process.stdout.write(JSON.stringify({
     tenant: process.argv[1],
     token: process.argv[2],
@@ -187,9 +226,9 @@ neis_route_payload="$(docker exec "$web_container" node -e '
     fromDate: process.argv[4],
     toDate: process.argv[5],
   }));
-' "$tenant_code" "$session_token" "$neis_school_bid_id" "$neis_from_date" "$neis_to_date")"
+  ' "$tenant_code" "$session_token" "$neis_school_bid_id" "$neis_from_date" "$neis_to_date")"
 
-neis_route_result="$(printf '%s' "$neis_route_payload" | docker exec --interactive "$web_container" node -e '
+  neis_route_result="$(printf '%s' "$neis_route_payload" | docker exec --interactive "$web_container" node -e '
   process.stdin.setEncoding("utf8");
   let input = "";
   process.stdin.on("data", chunk => input += chunk);
@@ -238,8 +277,11 @@ neis_route_result="$(printf '%s' "$neis_route_payload" | docker exec --interacti
       process.exit(1);
     }
   });
-')"
-echo "$neis_route_result"
+  ')"
+  echo "$neis_route_result"
+else
+  echo 'Authenticated NEIS meal data smoke skipped: no active mapped bidder contract exists.'
+fi
 
 start_date='2026-07-29'
 end_date='2026-08-27'

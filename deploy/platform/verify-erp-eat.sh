@@ -57,85 +57,45 @@ docker exec "$web_container" node -e '
   });
 ' "$expected_schema_version"
 
-neis_school_context="$(docker exec "$postgres_container" \
-  psql --username mealops --dbname mealops --tuples-only --no-align --field-separator '|' \
-  --command "
-    SELECT source_office_code, source_school_code
-    FROM schools
-    WHERE source = 'NEIS_SCHOOL_INFO'
-      AND active = TRUE
-      AND mapping_status = 'MAPPED'
-    ORDER BY updated_at DESC, id
-    LIMIT 1
-  ")"
-neis_office_code='K10'
-neis_school_code='7840018'
-if [[ -n "$neis_school_context" ]]; then
-  IFS='|' read -r neis_office_code neis_school_code <<<"$neis_school_context"
-fi
-readonly neis_office_code neis_school_code
-[[ "$neis_office_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
-[[ "$neis_school_code" =~ ^[A-Za-z0-9._-]{1,32}$ ]]
-
 docker exec "$web_container" node -e '
   const { readFileSync } = require("node:fs");
-  const configuredKey = readFileSync("/run/secrets/neis-api-key", "utf8").trim();
-  let key;
-  try {
-    key = decodeURIComponent(configuredKey);
-  } catch {
-    throw new Error("NEIS secret contains invalid percent encoding");
-  }
-  const year = String(new Date().getUTCFullYear());
-  const url = new URL("https://open.neis.go.kr/hub/mealServiceDietInfo");
-  url.searchParams.set("KEY", key);
-  url.searchParams.set("Type", "json");
-  url.searchParams.set("pIndex", "1");
-  url.searchParams.set("pSize", "1");
-  url.searchParams.set("ATPT_OFCDC_SC_CODE", process.argv[1]);
-  url.searchParams.set("SD_SCHUL_CODE", process.argv[2]);
-  url.searchParams.set("MLSV_FROM_YMD", `${year}0101`);
-  url.searchParams.set("MLSV_TO_YMD", `${year}1231`);
+  const token = readFileSync("/run/secrets/embedding-worker-token", "utf8").trim();
+  if (token.length < 32) throw new Error("Internal verification token is invalid");
+  const url = new URL("http://127.0.0.1:3000/api/internal/neis/health");
   (async () => {
     let response;
+    let body;
     let lastError;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         response = await fetch(url, {
-          headers: { accept: "application/json", "accept-encoding": "identity" },
-          redirect: "manual",
-          referrerPolicy: "no-referrer",
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            host: "erp.starsnap.kr",
+          },
           signal: AbortSignal.timeout(10_000),
         });
+        body = await response.json().catch(() => ({}));
         if (response.ok) break;
         const status = response.status;
-        await response.body?.cancel();
-        lastError = new Error(`HTTP ${status}`);
-        if (status < 500 || status >= 600) break;
+        lastError = new Error(`HTTP ${status}: ${body.message ?? "unknown"}`);
+        if (![502, 503, 504].includes(status)) break;
       } catch (error) {
         lastError = error;
       }
       if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1_000));
     }
-    if (!response?.ok) throw lastError ?? new Error("NEIS request failed");
-    const payload = await response.json();
-    let result = payload?.RESULT;
-    if (!result && Array.isArray(payload?.mealServiceDietInfo)) {
-      for (const section of payload.mealServiceDietInfo) {
-        for (const head of Array.isArray(section?.head) ? section.head : []) {
-          if (head?.RESULT) result = head.RESULT;
-        }
-      }
+    if (!response?.ok) throw lastError ?? new Error("NEIS Worker health request failed");
+    if (body?.ok !== true || body?.source !== "NEIS" || !Number.isSafeInteger(body?.total)) {
+      throw new Error("NEIS Worker health response is invalid");
     }
-    if (!result || !["INFO-000", "INFO-200"].includes(result.CODE)) {
-      throw new Error(`Unexpected NEIS result: ${result?.CODE ?? "missing"}`);
-    }
-    console.log(`Authenticated NEIS meal lookup verified: code=${result.CODE}`);
+    console.log(`Authenticated NEIS Worker lookup verified: total=${body.total}`);
   })().catch((error) => {
-    console.error(`Authenticated NEIS meal lookup failed: ${error.message}`);
+    console.error(`Authenticated NEIS Worker lookup failed: ${error.message}`);
     process.exit(1);
   });
-' "$neis_office_code" "$neis_school_code"
+'
 
 bidder_context="$(docker exec "$postgres_container" \
   psql --username mealops --dbname mealops --tuples-only --no-align --field-separator '|' \

@@ -22,6 +22,7 @@ new_caddy_config_created=0
 target_server_preexisting=0
 target_web_preexisting=0
 target_creation_attempted=0
+target_publish_port=false
 caddy_update_attempted=0
 source_server_removal_attempted=0
 source_web_removal_attempted=0
@@ -220,7 +221,7 @@ ensure_target_services() {
   LOG_WEB_SERVICE_NAME="$target_web" \
   LOG_SERVER_LEGACY_ALIAS="$source_server" \
   LOG_WEB_LEGACY_ALIAS="$source_web" \
-  LOG_SERVER_PUBLISH_PORT=false \
+  LOG_SERVER_PUBLISH_PORT="$target_publish_port" \
   LOG_REQUIRE_IMAGE_MATCH=true \
   HUB_SERVER_IMAGE="$server_image" HUB_WEB_IMAGE="$web_image" \
   HUB_SERVER_REPLICAS=1 HUB_WEB_REPLICAS=1 \
@@ -346,6 +347,10 @@ compute_new_caddy_config_identity
 
 if service_exists "$target_server"; then
   target_server_preexisting=1
+  if docker service inspect --format '{{range .Endpoint.Ports}}{{println .PublishedPort}}{{end}}' \
+    "$target_server" | grep -Fxq '8081'; then
+    target_publish_port=true
+  fi
 fi
 if service_exists "$target_web"; then
   target_web_preexisting=1
@@ -418,9 +423,11 @@ if service_exists "$source_server"; then
   wait_for_absent "$source_server"
 fi
 
-docker service update --detach=true \
-  --publish-add 'published=8081,target=8081,protocol=tcp,mode=host' \
-  "$target_server" >/dev/null
+if [[ "$target_publish_port" == false ]]; then
+  docker service update --detach=true \
+    --publish-add 'published=8081,target=8081,protocol=tcp,mode=host' \
+    "$target_server" >/dev/null
+fi
 wait_for_service "$target_server" server completed
 wait_for_service "$target_web" web completed
 verify_from_caddy

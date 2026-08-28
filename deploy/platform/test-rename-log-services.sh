@@ -400,4 +400,19 @@ test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
 assert_contains "$resume_output" 'Resuming Log rename from verified exact-name services and Caddy route.'
 assert_contains "$resume_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
 
+reset_state pass normal normal normal
+write_state old-server 0
+write_state old-web 0
+write_state new-server 1
+write_state new-web 1
+write_state target-port 1
+write_state caddy-config starsnap-company_caddyfile_0000000000000000
+resume_with_port_output="$(state resume-with-port.out)"
+run_rename "$resume_with_port_output"
+test "$(read_state new-server)" = 1
+test "$(read_state new-web)" = 1
+test "$(read_state target-port)" = 1
+if grep -Fxq target-port-add "$(state events)"; then exit 1; fi
+assert_contains "$resume_with_port_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
+
 echo 'Log service rename tests passed.'

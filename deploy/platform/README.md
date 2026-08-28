@@ -13,7 +13,7 @@ Internet
   -> 192.168.1.103 starsnap-company_caddy
        -> starsnap-sns_web                  sns + chat
        -> starsnap-admin_web/server         admin
-       -> starsnap-log-web/server           log
+       -> starsnap-log_web / starsnap-log_server   log
        -> starsnap-erp_web                  erp
        -> starsnap-main_api                 existing SNS API
 
@@ -63,10 +63,11 @@ requires a compatible server GPU or a replacement inference service.
 
 ## Exact Log service-name migration
 
-The one-time rename moves `starsnap-hub_server` to `starsnap-log-server` and
-`starsnap-hub_web` to `starsnap-log-web`. The PostgreSQL service, volume, and
+The one-time rename moves `starsnap-log-server` to `starsnap-log_server` and
+`starsnap-log-web` to `starsnap-log_web`. The PostgreSQL service, volume, and
 secrets stay in the `starsnap-hub` stack. The standalone replacement services
-retain the two legacy names as overlay aliases so existing internal callers keep
+retain the current hyphen names and the older `starsnap-hub_server` and
+`starsnap-hub_web` names as overlay aliases so existing internal callers keep
 working after the source services are removed.
 
 The infrastructure commit must include `[skip ci]`. Push it before changing any
@@ -124,7 +125,7 @@ proved healthy.
    destination to the target Hub. Its state file enables an explicit restore.
 9. Keep the new Caddy routes out of the preparation commit. Dispatch
    `switch-log` with confirmation `SWITCH-MAIN-API-LOG` to update the
-   existing SNS API log destination to `http://starsnap-log-server:8081`, then
+   existing SNS API log destination to `http://starsnap-log_server:8081`, then
    merge the separate Caddy cutover commit and require internal plus external
    checks for SNS, Chat, ERP, Admin, and Log.
 10. While the manager-local Ollama service is still healthy, dispatch

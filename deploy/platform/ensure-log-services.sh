@@ -7,10 +7,10 @@ readonly manager_address='192.168.1.103'
 readonly manager_label='starsnap.actions-runner'
 readonly app_network='starsnap-main_app-net'
 readonly database_network='starsnap-hub_database'
-readonly server_service="${LOG_SERVER_SERVICE_NAME:-starsnap-log-server}"
-readonly web_service="${LOG_WEB_SERVICE_NAME:-starsnap-log-web}"
-readonly server_legacy_alias="${LOG_SERVER_LEGACY_ALIAS-starsnap-hub_server}"
-readonly web_legacy_alias="${LOG_WEB_LEGACY_ALIAS-starsnap-hub_web}"
+readonly server_service="${LOG_SERVER_SERVICE_NAME:-starsnap-log_server}"
+readonly web_service="${LOG_WEB_SERVICE_NAME:-starsnap-log_web}"
+readonly server_aliases="${LOG_SERVER_ALIASES-${LOG_SERVER_LEGACY_ALIAS-starsnap-log-server,starsnap-hub_server}}"
+readonly web_aliases="${LOG_WEB_ALIASES-${LOG_WEB_LEGACY_ALIAS-starsnap-log-web,starsnap-hub_web}}"
 readonly publish_server_port="${LOG_SERVER_PUBLISH_PORT:-true}"
 readonly require_image_match="${LOG_REQUIRE_IMAGE_MATCH:-false}"
 readonly server_replicas="${HUB_SERVER_REPLICAS:-1}"
@@ -59,22 +59,29 @@ resolve_node_binary() {
 }
 
 network_attachment() {
-  local network="$1" alias="$2"
-  if [[ -n "$alias" ]]; then
-    printf 'name=%s,alias=%s\n' "$network" "$alias"
-  else
+  local network="$1" aliases_csv="$2" attachment alias
+  local -a aliases=()
+  attachment="name=$network"
+  if [[ -z "$aliases_csv" ]]; then
     printf '%s\n' "$network"
+    return 0
   fi
+  IFS=',' read -r -a aliases <<<"$aliases_csv"
+  for alias in "${aliases[@]}"; do
+    validate_name "$alias"
+    attachment+=",alias=$alias"
+  done
+  printf '%s\n' "$attachment"
 }
 
 verify_existing_service() {
-  local service="$1" kind="$2" legacy_alias="$3"
+  local service="$1" kind="$2" aliases_csv="$3"
   local app_network_id database_network_id
   app_network_id="$(docker network inspect --format '{{.ID}}' "$app_network")"
   database_network_id="$(docker network inspect --format '{{.ID}}' "$database_network")"
   EXPECTED_SERVICE="$service" \
   EXPECTED_KIND="$kind" \
-  EXPECTED_LEGACY_ALIAS="$legacy_alias" \
+  EXPECTED_ALIASES="$aliases_csv" \
   EXPECTED_APP_NETWORK_ID="$app_network_id" \
   EXPECTED_DATABASE_NETWORK_ID="$database_network_id" \
   EXPECTED_PUBLISH_PORT="$publish_server_port" \
@@ -97,12 +104,12 @@ ensure_server() {
   local app_attachment
   local -a publish_args=()
   if service_exists "$server_service"; then
-    verify_existing_service "$server_service" server "$server_legacy_alias" || return 1
+    verify_existing_service "$server_service" server "$server_aliases" || return 1
     scale_if_needed "$server_service" "$server_replicas"
     return 0
   fi
 
-  app_attachment="$(network_attachment "$app_network" "$server_legacy_alias")"
+  app_attachment="$(network_attachment "$app_network" "$server_aliases")"
   if [[ "$publish_server_port" == true ]]; then
     publish_args+=(--publish 'published=8081,target=8081,protocol=tcp,mode=host')
   else
@@ -151,12 +158,12 @@ ensure_server() {
 ensure_web() {
   local app_attachment
   if service_exists "$web_service"; then
-    verify_existing_service "$web_service" web "$web_legacy_alias" || return 1
+    verify_existing_service "$web_service" web "$web_aliases" || return 1
     scale_if_needed "$web_service" "$web_replicas"
     return 0
   fi
 
-  app_attachment="$(network_attachment "$app_network" "$web_legacy_alias")"
+  app_attachment="$(network_attachment "$app_network" "$web_aliases")"
   docker service create --detach --no-resolve-image --with-registry-auth \
     --name "$web_service" \
     --replicas "$web_replicas" \
@@ -189,8 +196,8 @@ ensure_web() {
 
 validate_name "$server_service"
 validate_name "$web_service"
-if [[ -n "$server_legacy_alias" ]]; then validate_name "$server_legacy_alias"; fi
-if [[ -n "$web_legacy_alias" ]]; then validate_name "$web_legacy_alias"; fi
+network_attachment "$app_network" "$server_aliases" >/dev/null
+network_attachment "$app_network" "$web_aliases" >/dev/null
 [[ "$server_replicas" =~ ^[0-9]+$ ]]
 [[ "$web_replicas" =~ ^[0-9]+$ ]]
 [[ "$require_image_match" =~ ^(true|false)$ ]]

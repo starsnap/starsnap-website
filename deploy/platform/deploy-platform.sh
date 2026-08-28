@@ -40,8 +40,8 @@ readonly private_image_services=(
   'starsnap-erp_smtp-mailer|ERP_SMTP_MAILER_IMAGE'
   'starsnap-erp_web|ERP_WEB_IMAGE'
   'starsnap-erp_embedding-worker|ERP_EMBEDDING_WORKER_IMAGE'
-  'starsnap-log-server|HUB_SERVER_IMAGE'
-  'starsnap-log-web|HUB_WEB_IMAGE'
+  'starsnap-log_server|HUB_SERVER_IMAGE'
+  'starsnap-log_web|HUB_WEB_IMAGE'
   'starsnap-admin_server|ADMIN_SERVER_IMAGE'
   'starsnap-admin_web|ADMIN_WEB_IMAGE'
   'starsnap-sns_web|SNS_WEB_IMAGE'
@@ -134,14 +134,14 @@ create_persistent_resources() {
 guard_log_service_rename() {
   local names
   names="$(docker service ls --format '{{.Name}}')"
-  if grep -Fxq 'starsnap-hub_server' <<<"$names" \
-    && ! grep -Fxq 'starsnap-log-server' <<<"$names"; then
-    echo 'Refusing to prune starsnap-hub_server before starsnap-log-server exists.' >&2
+  if grep -Fxq 'starsnap-log-server' <<<"$names" \
+    && ! grep -Fxq 'starsnap-log_server' <<<"$names"; then
+    echo 'Refusing to remove starsnap-log-server before starsnap-log_server exists.' >&2
     return 1
   fi
-  if grep -Fxq 'starsnap-hub_web' <<<"$names" \
-    && ! grep -Fxq 'starsnap-log-web' <<<"$names"; then
-    echo 'Refusing to prune starsnap-hub_web before starsnap-log-web exists.' >&2
+  if grep -Fxq 'starsnap-log-web' <<<"$names" \
+    && ! grep -Fxq 'starsnap-log_web' <<<"$names"; then
+    echo 'Refusing to remove starsnap-log-web before starsnap-log_web exists.' >&2
     return 1
   fi
 }
@@ -345,8 +345,8 @@ case "$phase" in
     wait_for_replicas starsnap-erp_web 1
     wait_for_replicas starsnap-erp_embedding-worker 1
     wait_for_replicas starsnap-hub_postgres 1
-    wait_for_replicas starsnap-log-server 1
-    wait_for_replicas starsnap-log-web 1
+    wait_for_replicas starsnap-log_server 1
+    wait_for_replicas starsnap-log_web 1
     wait_for_replicas starsnap-admin_server 1
     wait_for_replicas starsnap-admin_web 1
     wait_for_replicas starsnap-sns_web 1
@@ -363,8 +363,8 @@ case "$phase" in
       starsnap-sns_web=0 \
       starsnap-admin_web=0 \
       starsnap-admin_server=0 \
-      starsnap-log-web=0 \
-      starsnap-log-server=0 \
+      starsnap-log_web=0 \
+      starsnap-log_server=0 \
       starsnap-erp_embedding-worker=0 \
       starsnap-erp_web=0 \
       starsnap-erp_smtp-mailer=0 \

@@ -46,10 +46,10 @@ reset_state() {
 
 present() {
   case "$1" in
-    starsnap-hub_server) test "$(read_state old-server)" = 1 ;;
-    starsnap-hub_web) test "$(read_state old-web)" = 1 ;;
-    starsnap-log-server) test "$(read_state new-server)" = 1 ;;
-    starsnap-log-web) test "$(read_state new-web)" = 1 ;;
+    starsnap-log-server) test "$(read_state old-server)" = 1 ;;
+    starsnap-log-web) test "$(read_state old-web)" = 1 ;;
+    starsnap-log_server) test "$(read_state new-server)" = 1 ;;
+    starsnap-log_web) test "$(read_state new-web)" = 1 ;;
     starsnap-company_caddy) return 0 ;;
     *) return 1 ;;
   esac
@@ -57,10 +57,10 @@ present() {
 
 container_for() {
   case "$1" in
-    starsnap-hub_server) printf 'old-server-container\n' ;;
-    starsnap-hub_web) printf 'old-web-container\n' ;;
-    starsnap-log-server) printf 'new-server-container\n' ;;
-    starsnap-log-web) printf 'new-web-container\n' ;;
+    starsnap-log-server) printf 'old-server-container\n' ;;
+    starsnap-log-web) printf 'old-web-container\n' ;;
+    starsnap-log_server) printf 'new-server-container\n' ;;
+    starsnap-log_web) printf 'new-web-container\n' ;;
     starsnap-company_caddy) printf 'caddy-container\n' ;;
   esac
 }
@@ -79,7 +79,7 @@ docker() {
       target="${*: -1}"
       case "$*" in
         *'.Spec.TaskTemplate.ContainerSpec.Image'*)
-          if [[ "$target" == starsnap-log-* && -e "$(state local-target-images)" ]]; then
+          if [[ "$target" == starsnap-log_* && -e "$(state local-target-images)" ]]; then
             case "$target" in
               *server) printf 'starsnap.invalid/platform/log-server:sha-current\n' ;;
               *web) printf 'starsnap.invalid/platform/log-web:sha-current\n' ;;
@@ -104,11 +104,11 @@ docker() {
       ;;
     service:ls)
       if [[ "$*" == *--filter* ]]; then
-        for candidate in starsnap-hub_server starsnap-hub_web starsnap-log-server starsnap-log-web starsnap-company_caddy; do
+        for candidate in starsnap-log-server starsnap-log-web starsnap-log_server starsnap-log_web starsnap-company_caddy; do
           if [[ "$*" == *"$candidate"* ]] && present "$candidate"; then printf '%s 1/1\n' "$candidate"; fi
         done
       else
-        for candidate in starsnap-hub_server starsnap-hub_web starsnap-log-server starsnap-log-web starsnap-company_caddy; do
+        for candidate in starsnap-log-server starsnap-log-web starsnap-log_server starsnap-log_web starsnap-company_caddy; do
           present "$candidate" && printf '%s\n' "$candidate"
         done
       fi
@@ -121,13 +121,19 @@ docker() {
         write_state caddy-state completed
         record_event caddy-update
         if [[ "$(read_state caddy-update-mode)" == ambiguous ]]; then return 1; fi
-      elif [[ "$target" == starsnap-log-server && "$*" == *--publish-add* ]]; then
+      elif [[ "$target" == starsnap-log_server && "$*" == *--publish-add* ]]; then
         write_state target-port 1
         record_event target-port-add
         if [[ "$(read_state port-add-mode)" == ambiguous ]]; then return 1; fi
-      elif [[ "$target" == starsnap-log-server && "$*" == *--publish-rm* ]]; then
+      elif [[ "$target" == starsnap-log_server && "$*" == *--publish-rm* ]]; then
         write_state target-port 0
         record_event target-port-remove
+      elif [[ "$target" == starsnap-log_web && "$*" == *--network-add* ]]; then
+        grep -Fq -- 'name=starsnap-main_app-net,alias=starsnap-log-web,alias=starsnap-hub_web' <<<"$*"
+        record_event target-web-aliases-add
+      elif [[ "$target" == starsnap-log_server && "$*" == *--network-add* ]]; then
+        grep -Fq -- 'name=starsnap-main_app-net,alias=starsnap-log-server,alias=starsnap-hub_server' <<<"$*"
+        record_event target-server-aliases-add
       else
         return 1
       fi
@@ -141,21 +147,21 @@ docker() {
     service:rm)
       target="${1:-}"
       case "$target" in
-        starsnap-hub_web) write_state old-web 0; record_event old-web-remove ;;
-        starsnap-hub_server)
+        starsnap-log-web) write_state old-web 0; record_event old-web-remove ;;
+        starsnap-log-server)
           write_state old-server 0
           record_event old-server-remove
           if [[ "$(read_state server-remove-mode)" == ambiguous ]]; then return 1; fi
           ;;
-        starsnap-log-web) write_state new-web 0; record_event new-web-remove ;;
-        starsnap-log-server) write_state new-server 0; write_state target-port 0; record_event new-server-remove ;;
+        starsnap-log_web) write_state new-web 0; record_event new-web-remove ;;
+        starsnap-log_server) write_state new-server 0; write_state target-port 0; record_event new-server-remove ;;
         *) return 1 ;;
       esac
       ;;
     service:ps|service:logs)
       ;;
     ps:--filter)
-      for candidate in starsnap-hub_server starsnap-hub_web starsnap-log-server starsnap-log-web starsnap-company_caddy; do
+      for candidate in starsnap-log-server starsnap-log-web starsnap-log_server starsnap-log_web starsnap-company_caddy; do
         if [[ "$*" == *"$candidate"* ]] && present "$candidate"; then container_for "$candidate"; fi
       done
       ;;
@@ -194,9 +200,9 @@ docker() {
       target="$operation"
       if [[ "$target" == caddy-container && "$*" == *"https://127.0.0.1/"* ]]; then
         if [[ "$(read_state route-result)" == pass ]]; then printf '<title>StarSnap Log Dashboard</title>\n'; else return 1; fi
-      elif [[ "$target" == caddy-container && "$*" == *"starsnap-log-web"* ]]; then
+      elif [[ "$target" == caddy-container && "$*" == *"starsnap-log_web"* ]]; then
         printf '<title>StarSnap Log Dashboard</title>\n'
-      elif [[ "$target" == caddy-container && "$*" == *"starsnap-log-server"* ]]; then
+      elif [[ "$target" == caddy-container && "$*" == *"starsnap-log_server"* ]]; then
         printf '{"status":"UP"}\n'
       else
         return 0
@@ -239,12 +245,22 @@ docker() {
 bash() {
   if [[ "${1:-}" == deploy/platform/validate-platform.sh ]]; then return 0; fi
   if [[ "${1:-}" == deploy/platform/ensure-log-services.sh ]]; then
-    if [[ "${LOG_SERVER_SERVICE_NAME:-}" == starsnap-log-server ]]; then
-      write_state new-server 1
-      write_state new-web 1
-      record_event targets-create
-      if [[ "$(read_state target-ensure-mode)" == fail ]]; then return 1; fi
+    if [[ "${LOG_SERVER_SERVICE_NAME:-}" == starsnap-log_server ]]; then
+      if [[ -z "${LOG_SERVER_ALIASES:-}" && -z "${LOG_WEB_ALIASES:-}" ]]; then
+        write_state new-server 1
+        write_state new-web 1
+        record_event targets-create
+        if [[ "$(read_state target-ensure-mode)" == fail ]]; then return 1; fi
+      else
+        test "${LOG_SERVER_ALIASES:-}" = 'starsnap-log-server,starsnap-hub_server'
+        test "${LOG_WEB_ALIASES:-}" = 'starsnap-log-web,starsnap-hub_web'
+        test "$(read_state new-server)" = 1
+        test "$(read_state new-web)" = 1
+        record_event target-aliases-verified
+      fi
     else
+      test "${LOG_SERVER_ALIASES:-}" = 'starsnap-hub_server'
+      test "${LOG_WEB_ALIASES:-}" = 'starsnap-hub_web'
       if [[ "$(read_state source-restore-mode)" == fail ]]; then return 1; fi
       write_state old-server 1
       write_state old-web 1
@@ -305,7 +321,9 @@ test "$(read_state new-server)" = 1
 test "$(read_state new-web)" = 1
 test "$(read_state target-port)" = 1
 test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
-assert_contains "$success_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
+assert_contains "$(state events)" target-web-aliases-add
+assert_contains "$(state events)" target-server-aliases-add
+assert_contains "$success_output" 'Log service rename verified: starsnap-log-server -> starsnap-log_server, starsnap-log-web -> starsnap-log_web'
 
 reset_state fail normal normal normal
 route_failure_output="$(state route-failure.out)"
@@ -404,7 +422,7 @@ test "$(read_state new-web)" = 1
 test "$(read_state target-port)" = 1
 test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
 assert_contains "$resume_output" 'Resuming Log rename from verified exact-name services and Caddy route.'
-assert_contains "$resume_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
+assert_contains "$resume_output" 'Log service rename verified: starsnap-log-server -> starsnap-log_server, starsnap-log-web -> starsnap-log_web'
 
 reset_state pass normal normal normal
 write_state old-server 0
@@ -419,7 +437,7 @@ test "$(read_state new-server)" = 1
 test "$(read_state new-web)" = 1
 test "$(read_state target-port)" = 1
 if grep -Fxq target-port-add "$(state events)"; then exit 1; fi
-assert_contains "$resume_with_port_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
+assert_contains "$resume_with_port_output" 'Log service rename verified: starsnap-log-server -> starsnap-log_server, starsnap-log-web -> starsnap-log_web'
 
 reset_state pass normal normal normal normal normal normal starsnap-company_caddyfile_0000000000000000 fail
 write_state old-server 0
@@ -440,5 +458,20 @@ if grep -Fxq target-port-remove "$(state events)"; then exit 1; fi
 if grep -Fxq sources-restore "$(state events)"; then exit 1; fi
 assert_contains "$resume_port_failure_output" 'Keeping the verified exact-name services, Caddy route, and preexisting host port.'
 assert_contains "$resume_port_failure_output" 'CRITICAL: Log service rename rollback could not be fully verified.'
+
+reset_state pass normal normal normal
+write_state new-server 1
+partial_target_output="$(state partial-target.out)"
+set +e
+run_rename "$partial_target_output"
+partial_target_status=$?
+set -e
+test "$partial_target_status" -ne 0
+test "$(read_state old-server)" = 1
+test "$(read_state old-web)" = 1
+test "$(read_state new-server)" = 1
+test "$(read_state new-web)" = 0
+test "$(read_state caddy-config)" = starsnap-company_caddyfile_previous
+assert_contains "$partial_target_output" 'Refusing a partial Log rename target state; both target services must exist or both must be absent.'
 
 echo 'Log service rename tests passed.'

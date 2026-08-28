@@ -73,7 +73,7 @@ log.starsnap.kr {
 
 	@log_dashboard_api path /api/dashboard/*
 	handle @log_dashboard_api {
-		reverse_proxy starsnap-log-server:8081
+		reverse_proxy starsnap-log_server:8081
 	}
 
 	@log_blocked_api path /api/*
@@ -82,7 +82,7 @@ log.starsnap.kr {
 	}
 
 	handle {
-		reverse_proxy starsnap-log-web:5173
+		reverse_proxy starsnap-log_web:5173
 	}
 }
 

@@ -20,8 +20,8 @@ const baseEnv = {
 function serviceFixture(kind) {
   const server = kind === "server";
   const image = `registry.example/log-${kind}:current`;
-  const name = `starsnap-log-${kind}`;
-  const legacyAlias = `starsnap-hub_${kind}`;
+  const name = `starsnap-log_${kind}`;
+  const aliases = [`starsnap-log-${kind}`, `starsnap-hub_${kind}`];
   const healthCommand = server
     ? "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081'"
     : "node -e \"fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"";
@@ -66,10 +66,10 @@ function serviceFixture(kind) {
         },
         Networks: server
           ? [
-              { Target: "app-network-id", Aliases: [legacyAlias] },
+              { Target: "app-network-id", Aliases: aliases },
               { Target: "database-network-id" },
             ]
-          : [{ Target: "app-network-id", Aliases: [legacyAlias] }],
+          : [{ Target: "app-network-id", Aliases: aliases }],
         RestartPolicy: {
           Condition: "on-failure",
           Delay: 5_000_000_000,
@@ -101,7 +101,7 @@ function serviceFixture(kind) {
       EndpointSpec: { Ports: [] },
     },
     Endpoint: { Ports: [] },
-    expected: { name, image, legacyAlias },
+    expected: { name, image, aliases },
   };
 }
 
@@ -114,7 +114,7 @@ function verify(kind, fixture) {
       EXPECTED_KIND: kind,
       EXPECTED_SERVICE: fixture.expected.name,
       EXPECTED_IMAGE: fixture.expected.image,
-      EXPECTED_LEGACY_ALIAS: fixture.expected.legacyAlias,
+      EXPECTED_ALIASES: fixture.expected.aliases.join(","),
     },
   });
 }

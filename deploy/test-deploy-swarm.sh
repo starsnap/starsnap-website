@@ -400,14 +400,14 @@ grep -Fq 'caddyHttps("admin.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq "log.starsnap.kr {" deploy/Caddyfile
 grep -Fq "@log_dashboard_api path /api/dashboard/*" deploy/Caddyfile
-grep -Fq "reverse_proxy starsnap-log-server:8081" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-log_server:8081" deploy/Caddyfile
 grep -Fq "@log_blocked_api path /api/*" deploy/Caddyfile
-grep -Fq "reverse_proxy starsnap-log-web:5173" deploy/Caddyfile
+grep -Fq "reverse_proxy starsnap-log_web:5173" deploy/Caddyfile
 grep -Fq 'caddyHttp("log.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("log.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'await caddyHttps("log.starsnap.kr", logServicesPath)' deploy/verify-internal.mjs
 grep -Fq '"Log Hub dashboard Access gate"' deploy/verify-internal.mjs
-grep -Fq 'hostname: "starsnap-log-server"' deploy/verify-internal.mjs
+grep -Fq 'hostname: "starsnap-log_server"' deploy/verify-internal.mjs
 grep -Fq 'port: 8081' deploy/verify-internal.mjs
 grep -Fq 'headers: { host: "log.starsnap.kr" }' deploy/verify-internal.mjs
 grep -Fq 'expectStatus(logHealth, 200, "Log Hub service health")' deploy/verify-internal.mjs

@@ -89,19 +89,19 @@ run_ensure() {
 }
 
 run_ensure
-server_args="$(cat "$(state create-starsnap-log-server)")"
-web_args="$(cat "$(state create-starsnap-log-web)")"
-grep -Fq -- '--name starsnap-log-server' <<<"$server_args"
-grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-hub_server' <<<"$server_args"
+server_args="$(cat "$(state create-starsnap-log_server)")"
+web_args="$(cat "$(state create-starsnap-log_web)")"
+grep -Fq -- '--name starsnap-log_server' <<<"$server_args"
+grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-log-server,alias=starsnap-hub_server' <<<"$server_args"
 grep -Fq -- '--network starsnap-hub_database' <<<"$server_args"
 grep -Fq -- '--publish published=8081,target=8081,protocol=tcp,mode=host' <<<"$server_args"
 grep -Fq -- 'source=hub-db-v1,target=hub-db-password,uid=1000,gid=1000,mode=0400' <<<"$server_args"
-grep -Fq -- '--name starsnap-log-web' <<<"$web_args"
-grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-hub_web' <<<"$web_args"
+grep -Fq -- '--name starsnap-log_web' <<<"$web_args"
+grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-log-web,alias=starsnap-hub_web' <<<"$web_args"
 
 HUB_SERVER_REPLICAS=0 HUB_WEB_REPLICAS=0 run_ensure
-grep -Fxq 'starsnap-log-server=0' "$(state scales)"
-grep -Fxq 'starsnap-log-web=0' "$(state scales)"
+grep -Fxq 'starsnap-log_server=0' "$(state scales)"
+grep -Fxq 'starsnap-log_web=0' "$(state scales)"
 scale_count="$(wc -l <"$(state scales)")"
 HUB_SERVER_REPLICAS=0 HUB_WEB_REPLICAS=0 run_ensure
 test "$(wc -l <"$(state scales)")" -eq "$scale_count"
@@ -117,16 +117,16 @@ grep -Fq 'Log service specification mismatch: injected test drift' "$drift_outpu
 rm "$(state spec-drift)"
 
 find "$FAKE_ENSURE_ROOT" -mindepth 1 -delete
-LOG_SERVER_SERVICE_NAME='starsnap-hub_server' \
-LOG_WEB_SERVICE_NAME='starsnap-hub_web' \
-LOG_SERVER_LEGACY_ALIAS='' LOG_WEB_LEGACY_ALIAS='' \
+LOG_SERVER_SERVICE_NAME='starsnap-log-server' \
+LOG_WEB_SERVICE_NAME='starsnap-log-web' \
+LOG_SERVER_ALIASES='starsnap-hub_server' LOG_WEB_ALIASES='starsnap-hub_web' \
 LOG_SERVER_PUBLISH_PORT=false run_ensure
-legacy_server_args="$(cat "$(state create-starsnap-hub_server)")"
-legacy_web_args="$(cat "$(state create-starsnap-hub_web)")"
-grep -Fq -- '--name starsnap-hub_server' <<<"$legacy_server_args"
-grep -Fq -- '--network starsnap-main_app-net' <<<"$legacy_server_args"
-if grep -Fq -- 'alias=' <<<"$legacy_server_args"; then exit 1; fi
+legacy_server_args="$(cat "$(state create-starsnap-log-server)")"
+legacy_web_args="$(cat "$(state create-starsnap-log-web)")"
+grep -Fq -- '--name starsnap-log-server' <<<"$legacy_server_args"
+grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-hub_server' <<<"$legacy_server_args"
 if grep -Fq -- '--publish' <<<"$legacy_server_args"; then exit 1; fi
-grep -Fq -- '--name starsnap-hub_web' <<<"$legacy_web_args"
+grep -Fq -- '--name starsnap-log-web' <<<"$legacy_web_args"
+grep -Fq -- '--network name=starsnap-main_app-net,alias=starsnap-hub_web' <<<"$legacy_web_args"
 
 echo 'Ensure Log services tests passed.'

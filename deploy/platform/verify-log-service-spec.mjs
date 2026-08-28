@@ -62,12 +62,13 @@ equalSet(
   "placement constraints",
 );
 
+const expectedAliases = sorted((process.env.EXPECTED_ALIASES ?? "").split(",").filter(Boolean)).join(",");
 const expectedNetworks = kind === "server"
   ? [
-      [process.env.EXPECTED_APP_NETWORK_ID, process.env.EXPECTED_LEGACY_ALIAS],
+      [process.env.EXPECTED_APP_NETWORK_ID, expectedAliases],
       [process.env.EXPECTED_DATABASE_NETWORK_ID, ""],
     ]
-  : [[process.env.EXPECTED_APP_NETWORK_ID, process.env.EXPECTED_LEGACY_ALIAS]];
+  : [[process.env.EXPECTED_APP_NETWORK_ID, expectedAliases]];
 const actualNetworks = (task.Networks ?? []).map((network) => [
   network.Target,
   sorted(network.Aliases ?? []).join(","),

@@ -274,7 +274,7 @@ async function main() {
     "Log Hub dashboard Access gate",
   );
   const logHealth = await request(http, {
-    hostname: "starsnap-log-server",
+    hostname: "starsnap-log_server",
     port: 8081,
     path: "/actuator/health",
     headers: { host: "log.starsnap.kr" },

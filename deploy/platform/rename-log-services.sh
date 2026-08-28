@@ -3,11 +3,14 @@
 set -Eeuo pipefail
 set +x
 
-readonly source_server='starsnap-hub_server'
-readonly source_web='starsnap-hub_web'
-readonly target_server='starsnap-log-server'
-readonly target_web='starsnap-log-web'
+readonly source_server='starsnap-log-server'
+readonly source_web='starsnap-log-web'
+readonly target_server='starsnap-log_server'
+readonly target_web='starsnap-log_web'
+readonly server_compatibility_aliases='starsnap-log-server,starsnap-hub_server'
+readonly web_compatibility_aliases='starsnap-log-web,starsnap-hub_web'
 readonly manager_address='192.168.1.103'
+readonly app_network='starsnap-main_app-net'
 readonly caddy_service='starsnap-company_caddy'
 readonly caddy_image='docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d'
 readonly caddy_config_file='deploy/Caddyfile'
@@ -222,8 +225,8 @@ verify_manager_health() {
 ensure_target_services() {
   LOG_SERVER_SERVICE_NAME="$target_server" \
   LOG_WEB_SERVICE_NAME="$target_web" \
-  LOG_SERVER_LEGACY_ALIAS="$source_server" \
-  LOG_WEB_LEGACY_ALIAS="$source_web" \
+  LOG_SERVER_ALIASES="$server_compatibility_aliases" \
+  LOG_WEB_ALIASES="$web_compatibility_aliases" \
   LOG_SERVER_PUBLISH_PORT="$target_publish_port" \
   LOG_REQUIRE_IMAGE_MATCH=true \
   HUB_SERVER_IMAGE="$server_image" HUB_WEB_IMAGE="$web_image" \
@@ -231,10 +234,34 @@ ensure_target_services() {
     bash deploy/platform/ensure-log-services.sh
 }
 
+create_target_services_without_aliases() {
+  LOG_SERVER_SERVICE_NAME="$target_server" \
+  LOG_WEB_SERVICE_NAME="$target_web" \
+  LOG_SERVER_ALIASES='' LOG_WEB_ALIASES='' \
+  LOG_SERVER_PUBLISH_PORT=false \
+  LOG_REQUIRE_IMAGE_MATCH=true \
+  HUB_SERVER_IMAGE="$server_image" HUB_WEB_IMAGE="$web_image" \
+  HUB_SERVER_REPLICAS=1 HUB_WEB_REPLICAS=1 \
+    bash deploy/platform/ensure-log-services.sh
+}
+
+add_target_compatibility_aliases() {
+  docker service update --detach=true \
+    --network-rm "$app_network" \
+    --network-add "name=$app_network,alias=starsnap-log-web,alias=starsnap-hub_web" \
+    "$target_web" >/dev/null
+  wait_for_service "$target_web" web completed
+  docker service update --detach=true \
+    --network-rm "$app_network" \
+    --network-add "name=$app_network,alias=starsnap-log-server,alias=starsnap-hub_server" \
+    "$target_server" >/dev/null
+  wait_for_service "$target_server" server completed
+}
+
 restore_source_services() {
   if ! LOG_SERVER_SERVICE_NAME="$source_server" \
     LOG_WEB_SERVICE_NAME="$source_web" \
-    LOG_SERVER_LEGACY_ALIAS='' LOG_WEB_LEGACY_ALIAS='' \
+    LOG_SERVER_ALIASES='starsnap-hub_server' LOG_WEB_ALIASES='starsnap-hub_web' \
     LOG_SERVER_PUBLISH_PORT=true \
     LOG_REQUIRE_IMAGE_MATCH=true \
     HUB_SERVER_IMAGE="$server_image" HUB_WEB_IMAGE="$web_image" \
@@ -400,8 +427,16 @@ fi
 if (( target_web_preexisting == 1 )); then
   test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_web")" = "$web_image"
 fi
-if (( target_server_preexisting == 0 || target_web_preexisting == 0 )); then
+if (( target_server_preexisting != target_web_preexisting )); then
+  echo 'Refusing a partial Log rename target state; both target services must exist or both must be absent.' >&2
+  false
+fi
+if (( target_server_preexisting == 0 )); then
   target_creation_attempted=1
+  create_target_services_without_aliases
+  wait_for_service "$target_server" server completed
+  wait_for_service "$target_web" web completed
+  add_target_compatibility_aliases
 fi
 ensure_target_services
 wait_for_service "$target_server" server completed

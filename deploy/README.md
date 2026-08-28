@@ -120,8 +120,8 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
   verification also requires the shared web build's `social chat` capability
   marker so an older SNS-only image cannot pass the Chat release gate.
-- `https://log.starsnap.kr/*` serves `starsnap-log-web:5173`; only
-  `/api/dashboard/*` is proxied to `starsnap-log-server:8081`, while all other
+- `https://log.starsnap.kr/*` serves `starsnap-log_web:5173`; only
+  `/api/dashboard/*` is proxied to `starsnap-log_server:8081`, while all other
   public `/api/*` routes remain hidden with HTTP 404. The Hub database is a
   manager-local persistent volume and dashboard requests retain Cloudflare
   Access origin validation.

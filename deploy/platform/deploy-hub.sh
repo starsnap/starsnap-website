@@ -5,7 +5,7 @@ set +x
 
 readonly manager_address='192.168.1.103'
 readonly manager_label='starsnap.actions-runner'
-readonly web_service='starsnap-log-web'
+readonly web_service='starsnap-log_web'
 readonly manager_local_image_registry='starsnap.invalid'
 readonly expected_icon_sha256='61432c716c06942f957481e9bf7af211081cf3c28ad4b2ecf16dfbb16d7eb8f9'
 

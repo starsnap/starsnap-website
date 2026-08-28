@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { buildCurlArgs, parseRequest as parseProxyRequest } from './neis-curl-proxy.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,7 +32,7 @@ before(async () => {
       },
       load(id) {
         return id === '\0neis-cloudflare-test-double'
-          ? `export const env = { ERP_EMBEDDING_WORKER_TOKEN: '${'t'.repeat(32)}' }; export function waitUntil() {}`
+          ? `export const env = { ERP_EMBEDDING_WORKER_TOKEN: '${'t'.repeat(32)}', NEIS_PROXY_URL: 'http://127.0.0.1:3001' }; export function waitUntil() {}`
           : null;
       },
     }],
@@ -113,6 +115,7 @@ test('normalizes raw and encoded secrets once and sends them only to the HTTPS N
       toDate: '2026-08-31',
     }, {
       key: configuredSecret,
+      proxyUrl: '',
       fetchImpl: async (input, init) => {
         const url = new URL(String(input));
         assert.equal(url.origin, 'https://open.neis.go.kr');
@@ -135,6 +138,70 @@ test('normalizes raw and encoded secrets once and sends them only to the HTTPS N
   }
 });
 
+test('uses the loopback curl proxy without sending the NEIS key through Workerd', async () => {
+  const query = {
+    officeCode: 'B10',
+    schoolCode: '7010001',
+    fromDate: '2026-08-28',
+    toDate: '2026-08-31',
+  };
+  const result = await fetchNeisMeals(query, {
+    proxyUrl: 'http://127.0.0.1:3001',
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(url.href, 'http://127.0.0.1:3001/meal-service-diet-info');
+      assert.equal(url.searchParams.has('KEY'), false);
+      assert.equal(init?.method, 'POST');
+      assert.equal(init?.headers?.['Content-Type'], 'application/json');
+      assert.deepEqual(JSON.parse(String(init?.body)), query);
+      assert.equal(String(init?.body).includes('KEY'), false);
+      return Response.json(successPayload);
+    },
+  });
+  assert.equal(result.items.length, 1);
+
+  await assert.rejects(
+    fetchNeisMeals(query, { proxyUrl: 'https://example.com' }),
+    (error) => error instanceof NeisApiError && error.code === 'NOT_CONFIGURED',
+  );
+});
+
+test('validates curl proxy input and builds a shell-free HTTPS-only argument list', () => {
+  const query = {
+    officeCode: 'B10',
+    schoolCode: '7010001',
+    fromDate: '2026-08-01',
+    toDate: '2026-08-31',
+  };
+  assert.deepEqual(parseProxyRequest(query), query);
+  assert.equal(parseProxyRequest({ ...query, officeCode: 'B10;touch' }), null);
+  assert.equal(parseProxyRequest({ ...query, toDate: '2026-09-01' }), null);
+  const args = buildCurlArgs(query);
+  assert.deepEqual(args.slice(0, 7), [
+    '--disable', '--silent', '--show-error', '--fail-with-body', '--proto', '=https', '--connect-timeout',
+  ]);
+  assert.equal(args.includes('--location'), false);
+  assert.equal(args.includes('https://open.neis.go.kr/hub/mealServiceDietInfo'), true);
+  assert.equal(args.includes('KEY@-'), true);
+  assert.equal(args.some(value => value.includes('test-only-key')), false);
+  assert.equal(args.includes('MLSV_FROM_YMD=20260801'), true);
+  assert.equal(args.includes('MLSV_TO_YMD=20260831'), true);
+});
+
+test('packages and supervises the loopback proxy in the production runtime', async () => {
+  const entrypoint = await readFile(path.join(projectRoot, 'docker-entrypoint.sh'), 'utf8');
+  const dockerfile = await readFile(
+    path.resolve(projectRoot, '..', '..', 'deploy', 'platform', 'dockerfiles', 'erp-web.Dockerfile'),
+    'utf8',
+  );
+  assert.match(entrypoint, /node \/usr\/local\/lib\/starsnap-erp\/neis-curl-proxy\.mjs &/);
+  assert.match(entrypoint, /wait -n "\$wrangler_pid" "\$neis_proxy_pid"/);
+  assert.match(entrypoint, /shutdown_runtime/);
+  assert.match(dockerfile, /apt-get install --yes --no-install-recommends bash ca-certificates curl/);
+  assert.match(dockerfile, /scripts\/neis-curl-proxy\.mjs/);
+  assert.match(dockerfile, /NEIS_PROXY_URL/);
+});
+
 test('requires the server-side key and validates date ranges before lookup', async () => {
   await assert.rejects(
     fetchNeisMeals({
@@ -142,7 +209,7 @@ test('requires the server-side key and validates date ranges before lookup', asy
       schoolCode: '7010001',
       fromDate: '2026-08-28',
       toDate: '2026-08-31',
-    }),
+    }, { proxyUrl: '' }),
     (error) => error instanceof NeisApiError && error.code === 'NOT_CONFIGURED',
   );
 
@@ -177,6 +244,25 @@ test('protects the internal NEIS health endpoint with the existing worker bearer
   }));
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { ok: false, message: '인증이 필요합니다.' });
+});
+
+test('runs the authorized internal health check through the loopback proxy', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'http://127.0.0.1:3001/meal-service-diet-info');
+    assert.equal(init?.method, 'POST');
+    return Response.json({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } });
+  };
+  try {
+    const response = await internalNeisHealth(new Request('http://localhost/api/internal/neis/health', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${'t'.repeat(32)}` },
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, source: 'NEIS', total: 0 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('enforces an owned qualifying contract and its date boundaries before upstream lookup', async () => {

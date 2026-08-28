@@ -29,7 +29,7 @@ ENV NODE_ENV=production \
     WRANGLER_WRITE_LOGS=false
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates \
+    && apt-get install --yes --no-install-recommends bash ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && test -r /etc/ssl/certs/ca-certificates.crt \
     && npm install --global wrangler@4.92.0 \
@@ -39,6 +39,7 @@ RUN apt-get update \
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node docker-entrypoint.sh /usr/local/bin/starsnap-erp-entrypoint
 COPY --chown=node:node scripts/write-worker-config.mjs /usr/local/lib/starsnap-erp/write-worker-config.mjs
+COPY --chown=node:node scripts/neis-curl-proxy.mjs /usr/local/lib/starsnap-erp/neis-curl-proxy.mjs
 
 RUN chmod 0755 /usr/local/bin/starsnap-erp-entrypoint
 
@@ -47,6 +48,6 @@ USER node
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=8s --start-period=60s --retries=5 \
-  CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "const checks=[fetch('http://127.0.0.1:' + process.env.PORT + '/api/health').then(r=>r.ok)];if(process.env.NEIS_PROXY_URL)checks.push(fetch(new URL('/health',process.env.NEIS_PROXY_URL)).then(r=>r.status===204));Promise.all(checks).then(v=>process.exit(v.every(Boolean)?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["starsnap-erp-entrypoint"]

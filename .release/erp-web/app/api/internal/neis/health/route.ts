@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       officeCode: 'K10',
       schoolCode: '7840018',
       fromDate: `${year}-01-01`,
-      toDate: `${year}-12-31`,
+      toDate: `${year}-01-31`,
     });
     return NextResponse.json(
       { ok: true, source: 'NEIS', total: result.total },

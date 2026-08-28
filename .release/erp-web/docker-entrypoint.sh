@@ -1,5 +1,5 @@
-#!/bin/sh
-set -eu
+#!/bin/bash
+set -Eeuo pipefail
 
 if [ -z "${ERP_EMBEDDING_WORKER_TOKEN:-}" ]; then
   worker_token_file=${ERP_EMBEDDING_WORKER_TOKEN_FILE:-/run/starsnap-secrets/embedding-worker-token}
@@ -69,6 +69,42 @@ if [ -n "${NEIS_API_KEY:-}" ] && [ "${#NEIS_API_KEY}" -lt 16 ]; then
   exit 1
 fi
 
+if [ -n "${NEIS_PROXY_URL:-}" ]; then
+  neis_proxy_port=${NEIS_CURL_PROXY_PORT:-3001}
+  if [ "$NEIS_PROXY_URL" != "http://127.0.0.1:$neis_proxy_port" ]; then
+    echo "NEIS proxy URL must use the configured loopback port." >&2
+    exit 1
+  fi
+  if [ -z "${NEIS_API_KEY:-}" ]; then
+    echo "NEIS API key is required when the loopback proxy is enabled." >&2
+    exit 1
+  fi
+  export NEIS_CURL_PROXY_PORT="$neis_proxy_port"
+  node /usr/local/lib/starsnap-erp/neis-curl-proxy.mjs &
+  neis_proxy_pid=$!
+  neis_proxy_ready=0
+  attempts=0
+  while [ "$attempts" -lt 20 ]; do
+    if ! kill -0 "$neis_proxy_pid" 2>/dev/null; then
+      echo "NEIS loopback proxy exited during startup." >&2
+      wait "$neis_proxy_pid" || true
+      exit 1
+    fi
+    if node -e "fetch('http://127.0.0.1:$neis_proxy_port/health').then(r => process.exit(r.status === 204 ? 0 : 1)).catch(() => process.exit(1))"; then
+      neis_proxy_ready=1
+      break
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.25
+  done
+  if [ "$neis_proxy_ready" -ne 1 ]; then
+    echo "NEIS loopback proxy did not become ready." >&2
+    kill "$neis_proxy_pid" 2>/dev/null || true
+    wait "$neis_proxy_pid" || true
+    exit 1
+  fi
+fi
+
 worker_config_file=${STARSNAP_WORKER_CONFIG_FILE:-/app/dist/server/wrangler.runtime.json}
 case "$worker_config_file" in
   /*) ;;
@@ -90,4 +126,21 @@ set -- \
   --log-level info \
   --show-interactive-dev-session=false
 
-exec wrangler "$@"
+if [ -z "${neis_proxy_pid:-}" ]; then
+  exec wrangler "$@"
+fi
+
+wrangler "$@" &
+wrangler_pid=$!
+shutdown_runtime() {
+  trap - INT TERM
+  kill "$wrangler_pid" "$neis_proxy_pid" 2>/dev/null || true
+  wait "$wrangler_pid" 2>/dev/null || true
+  wait "$neis_proxy_pid" 2>/dev/null || true
+}
+trap 'shutdown_runtime; exit 143' INT TERM
+set +e
+wait -n "$wrangler_pid" "$neis_proxy_pid"
+set -e
+shutdown_runtime
+exit 1

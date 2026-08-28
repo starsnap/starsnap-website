@@ -40,6 +40,7 @@ const publicNames = [
   'HUB_SERVER_LOG_URL',
   'HUB_SERVER_LOG_TIMEOUT_MS',
   'EAT_CACHE_TTL_MINUTES',
+  'NEIS_PROXY_URL',
 ];
 const secretNames = [
   'DATABASE_URL',
@@ -50,8 +51,8 @@ const secretNames = [
   'ERP_EMBEDDING_WORKER_TOKEN',
   'HUB_SERVER_LOG_SECRET',
   'EAT_API_SERVICE_KEY',
-  'NEIS_API_KEY',
 ];
+const excludedSecretNames = [...secretNames, 'NEIS_API_KEY'];
 
 const parsed = JSON.parse(readFileSync(source, 'utf8'));
 if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -61,7 +62,7 @@ const vars = parsed.vars && typeof parsed.vars === 'object' && !Array.isArray(pa
   ? { ...parsed.vars }
   : {};
 let bindingCount = 0;
-for (const name of secretNames) delete vars[name];
+for (const name of excludedSecretNames) delete vars[name];
 for (const name of publicNames) {
   const value = process.env[name];
   if (!value) continue;

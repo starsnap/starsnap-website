@@ -6,5 +6,7 @@ declare namespace Cloudflare {
     ERP_EMBEDDING_WORKER_TOKEN?: string;
     EAT_API_SERVICE_KEY?: string;
     EAT_CACHE_TTL_MINUTES?: string;
+    NEIS_API_KEY?: string;
+    NEIS_PROXY_URL?: string;
   }
 }

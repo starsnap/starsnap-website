@@ -16,6 +16,7 @@ type NeisApiErrorCode =
 
 interface NeisBindings {
   NEIS_API_KEY?: string;
+  NEIS_PROXY_URL?: string;
 }
 export interface NeisMealRequest {
   officeCode: string;
@@ -48,6 +49,23 @@ function apiKey(override?: string) {
     return decodeURIComponent(value);
   } catch {
     throw new NeisApiError('NOT_CONFIGURED', '나이스 급식식단정보 인증키 형식이 올바르지 않습니다.');
+  }
+}
+
+function proxyEndpoint(override?: string) {
+  const value = (override ?? bindings().NEIS_PROXY_URL ?? '').trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== 'http:'
+      || !['127.0.0.1', 'localhost'].includes(url.hostname)
+      || url.username
+      || url.password
+    ) throw new Error('unsafe proxy');
+    return new URL('/meal-service-diet-info', url);
+  } catch {
+    throw new NeisApiError('NOT_CONFIGURED', '나이스 내부 프록시 주소가 올바르지 않습니다.');
   }
 }
 
@@ -191,31 +209,37 @@ export async function fetchNeisMeals(
   options: {
     fetchImpl?: typeof fetch;
     key?: string;
+    proxyUrl?: string;
     timeoutMilliseconds?: number;
   } = {},
 ) {
-  const url = new URL(neisMealEndpoint);
-  url.searchParams.set('KEY', apiKey(options.key));
-  url.searchParams.set('Type', 'json');
-  url.searchParams.set('pIndex', '1');
-  url.searchParams.set('pSize', '100');
-  url.searchParams.set('ATPT_OFCDC_SC_CODE', query.officeCode);
-  url.searchParams.set('SD_SCHUL_CODE', query.schoolCode);
-  url.searchParams.set('MLSV_FROM_YMD', query.fromDate.replaceAll('-', ''));
-  url.searchParams.set('MLSV_TO_YMD', query.toDate.replaceAll('-', ''));
+  const proxy = proxyEndpoint(options.proxyUrl);
+  const url = proxy ?? new URL(neisMealEndpoint);
+  if (!proxy) {
+    url.searchParams.set('KEY', apiKey(options.key));
+    url.searchParams.set('Type', 'json');
+    url.searchParams.set('pIndex', '1');
+    url.searchParams.set('pSize', '100');
+    url.searchParams.set('ATPT_OFCDC_SC_CODE', query.officeCode);
+    url.searchParams.set('SD_SCHUL_CODE', query.schoolCode);
+    url.searchParams.set('MLSV_FROM_YMD', query.fromDate.replaceAll('-', ''));
+    url.searchParams.set('MLSV_TO_YMD', query.toDate.replaceAll('-', ''));
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    options.timeoutMilliseconds ?? requestTimeoutMilliseconds,
+    options.timeoutMilliseconds ?? (proxy ? 12_000 : requestTimeoutMilliseconds),
   );
   try {
-    const response = await (options.fetchImpl ?? fetch)(url, {
-      headers: {
-        Accept: 'application/json',
-        // The NEIS origin returns HTTP 500 for Node/workerd's default compressed request.
-        'Accept-Encoding': 'identity',
-      },
+    const response = await (options.fetchImpl ?? fetch)(url, proxy ? {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(query),
+      redirect: 'error',
+      signal: controller.signal,
+    } : {
+      headers: { Accept: 'application/json', 'Accept-Encoding': 'identity' },
       redirect: 'manual',
       referrerPolicy: 'no-referrer',
       signal: controller.signal,

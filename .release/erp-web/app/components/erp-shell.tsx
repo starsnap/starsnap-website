@@ -1415,42 +1415,44 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
               <input id="global-search" value={searchQuery} disabled={loading} onChange={(event) => setSearchQuery(event.target.value)} placeholder="현재 화면에서 검색" className="star-control w-full bg-[var(--ss-surface-subtle)] pl-10 pr-3 text-sm" />
             </div>
           ) : <span className="ml-auto" />}
-          <button
-            type="button"
-            aria-label={loading ? '운영 알림 불러오는 중' : `운영 알림 ${operationalAlertCount}건 열기`}
-            aria-haspopup="dialog"
-            disabled={loading}
-             onClick={() => setNotice({
-               title: '운영 알림',
-               message: `거래망 수신 발주 ${data.networkMetrics.incomingOrders}건\n내부 발주 승인 대기 ${data.metrics.pendingOrders}건\n재고 주의 ${data.metrics.inventoryAlerts}건\nHACCP 시정조치 ${data.metrics.openHaccpIssues}건`,
-               tone: 'info',
-            })}
-            className="star-icon-button relative"
-          >
-            <Bell size={19} />
-            {!loading && operationalAlertCount > 0 && (
-              <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--ss-danger)] ring-2 ring-[var(--ss-surface)]" />
-            )}
-          </button>
-          <div className="flex min-h-11 min-w-0 shrink items-center gap-2 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface)] px-2.5 text-left shadow-[var(--ss-shadow-sm)] sm:px-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--ss-brand-soft)] text-xs font-bold text-[var(--ss-on-brand)]">{avatarLabel}</span>
-            <span className="hidden min-w-0 sm:block">
-              <span className="block max-w-32 truncate text-xs font-semibold">{session.user.username}</span>
-              <span className="block max-w-40 truncate text-[10px] text-[var(--ss-text-muted)]">{organizationLabel[data.tenant.organizationType]} · {roleLabel}</span>
-            </span>
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              aria-label={loading ? '운영 알림 불러오는 중' : `운영 알림 ${operationalAlertCount}건 열기`}
+              aria-haspopup="dialog"
+              disabled={loading}
+               onClick={() => setNotice({
+                 title: '운영 알림',
+                 message: `거래망 수신 발주 ${data.networkMetrics.incomingOrders}건\n내부 발주 승인 대기 ${data.metrics.pendingOrders}건\n재고 주의 ${data.metrics.inventoryAlerts}건\nHACCP 시정조치 ${data.metrics.openHaccpIssues}건`,
+                 tone: 'info',
+              })}
+              className="star-icon-button relative"
+            >
+              <Bell size={19} />
+              {!loading && operationalAlertCount > 0 && (
+                <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--ss-danger)] ring-2 ring-[var(--ss-surface)]" />
+              )}
+            </button>
+            <div className="flex min-h-11 min-w-0 shrink items-center gap-2 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface)] px-2.5 text-left shadow-[var(--ss-shadow-sm)] sm:px-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--ss-brand-soft)] text-xs font-bold text-[var(--ss-on-brand)]">{avatarLabel}</span>
+              <span className="hidden min-w-0 sm:block">
+                <span className="block max-w-32 truncate text-xs font-semibold">{session.user.username}</span>
+                <span className="block max-w-40 truncate text-[10px] text-[var(--ss-text-muted)]">{organizationLabel[data.tenant.organizationType]} · {roleLabel}</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label={`${session.user.username} 계정 로그아웃`}
+              aria-haspopup="dialog"
+              onClick={() => {
+                setLogoutError(null);
+                setLogoutDialogOpen(true);
+              }}
+              className="star-icon-button star-icon-button-danger"
+            >
+              <LogOut aria-hidden="true" size={19} />
+            </button>
           </div>
-          <button
-            type="button"
-            aria-label={`${session.user.username} 계정 로그아웃`}
-            aria-haspopup="dialog"
-            onClick={() => {
-              setLogoutError(null);
-              setLogoutDialogOpen(true);
-            }}
-            className="star-icon-button star-icon-button-danger"
-          >
-            <LogOut aria-hidden="true" size={19} />
-          </button>
         </header>
 
         <section id="erp-main-content" tabIndex={-1} className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">

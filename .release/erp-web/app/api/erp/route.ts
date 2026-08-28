@@ -78,23 +78,11 @@ export async function POST(request: Request) {
     const action = body.value as Partial<ErpAction>;
     if (
       !normalizeTenantCode(action.tenant) ||
-      !action.module || !['meals', 'purchasing', 'inventory', 'production', 'delivery', 'haccp'].includes(action.module) ||
-      !action.id || !action.action || !['confirm', 'approve', 'acknowledge', 'complete', 'resolve'].includes(action.action)
+      !action.module || !['meals', 'purchasing', 'inventory', 'production', 'delivery'].includes(action.module) ||
+      !action.id || !action.action || !['confirm', 'approve', 'acknowledge', 'complete'].includes(action.action)
     ) {
       return NextResponse.json({ message: '업무 처리 요청 형식이 올바르지 않습니다.' }, { status: 422, headers: corsHeaders(request) });
     }
-
-    if (action.module === 'haccp' && action.action === 'resolve') {
-      const verificationValue = action.evidence?.verificationValue?.trim();
-      const correctiveAction = action.evidence?.correctiveAction?.trim();
-      if (!verificationValue || !correctiveAction || verificationValue.length > 80 || correctiveAction.length > 500) {
-        return NextResponse.json(
-          { message: 'HACCP 종결에는 재측정값과 시정 조치 확인 내용이 필요합니다.' },
-          { status: 422, headers: corsHeaders(request) },
-        );
-      }
-    }
-
     action.tenant = normalizeTenantCode(action.tenant)!;
     const access = await authorizeTenant(request, action.tenant, true);
     if (!access.ok) {

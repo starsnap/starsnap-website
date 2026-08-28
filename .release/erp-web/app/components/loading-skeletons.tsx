@@ -21,7 +21,6 @@ const moduleTableLayouts: Partial<Record<ModuleId, { columns: number; minWidth: 
   production: { columns: 7, minWidth: 760 },
   delivery: { columns: 8, minWidth: 940 },
   settlement: { columns: 7, minWidth: 820 },
-  haccp: { columns: 8, minWidth: 940 },
 };
 
 export function SkeletonBlock({ className = '' }: SkeletonBlockProps) {
@@ -142,8 +141,8 @@ function DashboardSkeleton() {
         </section>
         <SidePanelSkeleton />
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        {Array.from({ length: 3 }, (_, index) => (
+      <div className="grid gap-4 md:grid-cols-2">
+        {Array.from({ length: 2 }, (_, index) => (
           <div key={index} className="flex min-h-[108px] items-center gap-4 rounded-[var(--ss-radius-lg)] border border-[var(--ss-border)] bg-[var(--ss-surface)] p-4 shadow-[var(--ss-shadow-sm)]">
             <SkeletonBlock className="h-11 w-11 shrink-0 rounded-[var(--ss-radius-md)]" />
             <div className="min-w-0 flex-1"><SkeletonBlock className="h-4 w-28" /><SkeletonBlock className="mt-3 h-3 w-full" /></div>
@@ -205,7 +204,7 @@ export function ModuleLoadingSkeleton({ activeModule }: { activeModule: ModuleId
       : (
         <div className="space-y-4">
           {['purchasing', 'settlement'].includes(activeModule) ? <MetricSkeletons count={3} /> : null}
-          {['partners', 'bids', 'production', 'haccp'].includes(activeModule) ? (
+          {['partners', 'bids', 'production'].includes(activeModule) ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_330px]"><TableSkeleton {...activeTableLayout} /><SidePanelSkeleton /></div>
           ) : <TableSkeleton {...activeTableLayout} />}
         </div>

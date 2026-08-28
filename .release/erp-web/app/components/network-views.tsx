@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   Gavel,
   Handshake,
-  Network,
   ShoppingCart,
 } from 'lucide-react';
 import type { AuthRole } from '../lib/auth-types';
@@ -287,15 +286,6 @@ function TablePanel({
   );
 }
 
-function organizationFlow(type: OrganizationType) {
-  return [
-    { type: 'BRAND' as const, label: '브랜드' },
-    { type: 'DEALER' as const, label: '대리점' },
-    { type: 'BIDDER' as const, label: '입찰업체' },
-    { type: null, label: '학교' },
-  ].map((item) => ({ ...item, current: item.type === type }));
-}
-
 export function NetworkDashboardSummary({ data, onNavigate }: Pick<NetworkViewProps, 'data' | 'onNavigate'>) {
   const { networkMetrics } = data;
   const type = data.tenant.organizationType;
@@ -306,7 +296,6 @@ export function NetworkDashboardSummary({ data, onNavigate }: Pick<NetworkViewPr
     ...(type === 'BIDDER' ? [] : [{ label: '받은 발주', value: `${number.format(networkMetrics.incomingOrders)}건`, detail: '공급 처리가 필요한 주문', icon: ArrowDownLeft, module: 'channel-orders' as ModuleId }]),
     ...(type === 'BRAND' ? [] : [{ label: '보낸 발주', value: `${number.format(networkMetrics.outgoingOrders)}건`, detail: '상위 거래처에 요청한 주문', icon: ArrowUpRight, module: 'channel-orders' as ModuleId }]),
   ];
-  const flow = organizationFlow(type);
 
   return (
     <section aria-labelledby="network-summary-title" className="space-y-4">
@@ -335,26 +324,6 @@ export function NetworkDashboardSummary({ data, onNavigate }: Pick<NetworkViewPr
             </button>
           );
         })}
-      </div>
-      <div className="panel">
-        <div className="panel-heading">
-          <div><p className="eyebrow">ORDER FLOW</p><h3>브랜드에서 학교까지 이어지는 공급 흐름</h3></div>
-          <Network aria-hidden="true" size={20} className="text-[var(--ss-brand)]" />
-        </div>
-        <ol className="grid gap-2 sm:grid-cols-7 sm:items-center" aria-label="공급 단계">
-          {flow.map((item, index) => (
-            <li key={item.label} className={index < flow.length - 1 ? 'contents' : undefined}>
-              <span className={`flex min-h-11 items-center justify-center rounded-[var(--ss-radius-md)] border px-3 text-sm font-bold ${
-                item.current
-                  ? 'border-[var(--ss-brand)] bg-[var(--ss-brand-soft)] text-[var(--ss-on-brand)]'
-                  : 'border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] text-[var(--ss-text-subtle)]'
-              }`} aria-current={item.current ? 'step' : undefined}>
-                {item.label}{item.current ? ' (현재 회사)' : ''}
-              </span>
-              {index < flow.length - 1 ? <ArrowRight aria-hidden="true" size={17} className="mx-auto rotate-90 text-[var(--ss-text-muted)] sm:rotate-0" /> : null}
-            </li>
-          ))}
-        </ol>
       </div>
     </section>
   );

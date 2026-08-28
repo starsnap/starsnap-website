@@ -182,17 +182,6 @@ async function seedFallbackData(client: PoolClient) {
           item.actualServings, item.salesAmount, item.ingredientCost, item.status, now],
       );
     }
-    for (const item of data.haccpChecks) {
-      await client.query(
-        `INSERT INTO haccp_checks
-          (id,tenant_id,site_id,check_date,category,item_name,measured_value,assignee_name,
-           corrective_action,status,created_at,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11) ON CONFLICT DO NOTHING`,
-        [item.id, tenant.id, siteIdFor(item.siteName), item.checkDate, item.category,
-          item.itemName, item.measuredValue, item.assigneeName, item.correctiveAction,
-          item.status, now],
-      );
-    }
   }
 
 }

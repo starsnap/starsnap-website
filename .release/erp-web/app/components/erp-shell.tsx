@@ -15,7 +15,6 @@ import {
   Menu,
   PackageSearch,
   RotateCw,
-  ShieldCheck,
   ShoppingCart,
   Split,
   Truck,
@@ -75,7 +74,6 @@ const moduleCatalog: Record<ModuleId, ModuleDefinition> = {
   production: { id: 'production', label: '생산 관리', shortLabel: '생산관리', icon: ChefHat },
   delivery: { id: 'delivery', label: '배송 관리', shortLabel: '배송관리', icon: Truck },
   settlement: { id: 'settlement', label: '정산·원가 관리', shortLabel: '정산·원가', icon: Calculator },
-  haccp: { id: 'haccp', label: '위생·HACCP', shortLabel: '위생·HACCP', icon: ShieldCheck },
 };
 
 const organizationLabel: Record<OrganizationType, string> = {
@@ -85,7 +83,7 @@ const organizationLabel: Record<OrganizationType, string> = {
 };
 
 const siteFilteredModules = new Set<ModuleId>([
-  'meals', 'purchasing', 'inventory', 'production', 'delivery', 'settlement', 'haccp',
+  'meals', 'purchasing', 'inventory', 'production', 'delivery', 'settlement',
 ]);
 
 const INITIAL_PRICE_MONTH = currentPriceMonth();
@@ -96,7 +94,6 @@ const statusByAction: Record<ErpAction['module'], string> = {
   inventory: '확인완료',
   production: '완료',
   delivery: '완료',
-  haccp: '시정완료',
 };
 
 interface ActionDialogState {
@@ -127,7 +124,6 @@ function createInitialErpData(tenant: AuthSession['memberships'][number]['tenant
       inventoryAlerts: 0,
       completedDeliveries: 0,
       totalDeliveries: 0,
-      openHaccpIssues: 0,
     },
     networkMetrics: {
       activePartners: 0,
@@ -147,7 +143,6 @@ function createInitialErpData(tenant: AuthSession['memberships'][number]['tenant
     productionOrders: [],
     deliveries: [],
     settlements: [],
-    haccpChecks: [],
   };
 }
 
@@ -645,11 +640,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
           deliveries: current.deliveries.map((item) => item.id === action.id ? { ...item, status } : item),
         };
       }
-      return {
-        ...current,
-        metrics: { ...current.metrics, openHaccpIssues: Math.max(0, current.metrics.openHaccpIssues - 1) },
-        haccpChecks: current.haccpChecks.map((item) => item.id === action.id ? { ...item, status } : item),
-      };
+      return current;
     });
   };
 
@@ -663,9 +654,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
           ? data.inventoryLots.find((item) => item.id === id)?.ingredientName
           : module === 'production'
             ? data.productionOrders.find((item) => item.id === id)?.menuName
-            : module === 'delivery'
-              ? data.deliveries.find((item) => item.id === id)?.deliveryNo
-              : data.haccpChecks.find((item) => item.id === id)?.itemName;
+          : data.deliveries.find((item) => item.id === id)?.deliveryNo;
     setActionError(null);
     setActionDialog({
       request: { tenant: tenantCode, module, id, action },
@@ -673,9 +662,9 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
     });
   };
 
-  const submitAction = async (evidence?: ErpAction['evidence']) => {
+  const submitAction = async () => {
     if (!actionDialog) return;
-    const request: ErpAction = { ...actionDialog.request, evidence };
+    const request = actionDialog.request;
     setActionError(null);
     setPendingAction(request.id);
     try {
@@ -1249,8 +1238,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
                   : activeModule === 'production' ? data.productionOrders
                     : activeModule === 'delivery' ? data.deliveries
                       : activeModule === 'settlement' ? data.settlements
-                        : activeModule === 'haccp' ? data.haccpChecks
-                          : [{ ...data.metrics, ...data.networkMetrics }];
+                        : [{ ...data.metrics, ...data.networkMetrics }];
     const headers = Object.keys(source[0] ?? {});
     const rows = source.map((record) => headers.map((header) => JSON.stringify((record as unknown as Record<string, unknown>)[header] ?? '')).join(','));
     const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
@@ -1288,7 +1276,6 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
 
   const operationalAlertCount = data.metrics.pendingOrders
     + data.metrics.inventoryAlerts
-    + data.metrics.openHaccpIssues
     + data.networkMetrics.incomingOrders;
   const partialDataUnavailable = Boolean(priceLoadError || refreshError);
   const connectionLabel = loading
@@ -1417,7 +1404,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
               disabled={loading}
                onClick={() => setNotice({
                  title: '운영 알림',
-                 message: `거래망 수신 발주 ${data.networkMetrics.incomingOrders}건\n내부 발주 승인 대기 ${data.metrics.pendingOrders}건\n재고 주의 ${data.metrics.inventoryAlerts}건\nHACCP 시정조치 ${data.metrics.openHaccpIssues}건`,
+                 message: `거래망 수신 발주 ${data.networkMetrics.incomingOrders}건\n내부 발주 승인 대기 ${data.metrics.pendingOrders}건\n재고 주의 ${data.metrics.inventoryAlerts}건`,
                  tone: 'info',
               })}
               className="star-icon-button relative"
@@ -1529,9 +1516,6 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
         key={actionDialog?.request.id ?? 'closed-action-dialog'}
         request={actionDialog?.request ?? null}
         itemLabel={actionDialog?.itemLabel ?? ''}
-        haccpCheck={actionDialog?.request.module === 'haccp'
-          ? data.haccpChecks.find((item) => item.id === actionDialog.request.id)
-          : undefined}
         busy={Boolean(pendingAction && actionDialog?.request.id === pendingAction)}
         error={actionError}
         onClose={() => {

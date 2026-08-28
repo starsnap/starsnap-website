@@ -15,8 +15,7 @@ export type ModuleId =
   | 'inventory'
   | 'production'
   | 'delivery'
-  | 'settlement'
-  | 'haccp';
+  | 'settlement';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE';
 export type ProductStorageType = 'AMBIENT' | 'CHILLED' | 'FROZEN';
 export type ProductUnit = 'KG' | 'G' | 'EA' | 'BOX' | 'PACK' | 'L' | 'BAG';
@@ -421,28 +420,12 @@ export interface Settlement {
   status: string;
 }
 
-export interface HaccpCheck {
-  id: string;
-  siteName: string;
-  checkDate: string;
-  category: string;
-  itemName: string;
-  measuredValue: string;
-  assigneeName: string;
-  correctiveAction: string | null;
-  verificationValue: string | null;
-  verifiedBy: string | null;
-  verifiedAt: string | null;
-  status: string;
-}
-
 export interface ErpMetrics {
   totalServings: number;
   pendingOrders: number;
   inventoryAlerts: number;
   completedDeliveries: number;
   totalDeliveries: number;
-  openHaccpIssues: number;
 }
 
 export interface NetworkMetrics {
@@ -470,18 +453,13 @@ export interface ErpData {
   productionOrders: ProductionOrder[];
   deliveries: Delivery[];
   settlements: Settlement[];
-  haccpChecks: HaccpCheck[];
 }
 
 export interface ErpAction {
   tenant: TenantCode;
-  module: 'meals' | 'purchasing' | 'inventory' | 'production' | 'delivery' | 'haccp';
+  module: 'meals' | 'purchasing' | 'inventory' | 'production' | 'delivery';
   id: string;
-  action: 'confirm' | 'approve' | 'acknowledge' | 'complete' | 'resolve';
-  evidence?: {
-    verificationValue?: string;
-    correctiveAction?: string;
-  };
+  action: 'confirm' | 'approve' | 'acknowledge' | 'complete';
 }
 
 export type NetworkMutation = {

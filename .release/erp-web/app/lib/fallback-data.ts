@@ -52,7 +52,6 @@ export function createFallbackData(code: DemoTenantCode): ErpData {
       inventoryAlerts: code === 'DAON' ? 2 : 4,
       completedDeliveries: code === 'HANBIT' ? 18 : 11,
       totalDeliveries: code === 'HANBIT' ? 24 : 16,
-      openHaccpIssues: 1,
     },
     networkMetrics: {
       activePartners: 0,
@@ -101,11 +100,6 @@ export function createFallbackData(code: DemoTenantCode): ErpData {
     settlements: [
       { id: `${prefix}-settle-1`, siteName: customer, settlementMonth: '2026-08', actualServings: 6840, salesAmount: 37620000, ingredientCost: 16140000, status: '검토중' },
       { id: `${prefix}-settle-2`, siteName: secondaryCustomer, settlementMonth: '2026-08', actualServings: 5920, salesAmount: 32560000, ingredientCost: 13024000, status: '확정' },
-    ],
-    haccpChecks: [
-      { id: `${prefix}-haccp-1`, siteName: kitchen, checkDate: '2026-08-23', category: '냉장고', itemName: '2번 냉장고 온도', measuredValue: '9°C', assigneeName: '김영양사', correctiveAction: '문 개방 상태 확인 후 재측정 예정', verificationValue: null, verifiedBy: null, verifiedAt: null, status: '시정필요' },
-      { id: `${prefix}-haccp-2`, siteName: kitchen, checkDate: '2026-08-23', category: '조리', itemName: '닭개장 중심온도', measuredValue: '76°C', assigneeName: '이조리사', correctiveAction: null, verificationValue: null, verifiedBy: null, verifiedAt: null, status: '적합' },
-      { id: `${prefix}-haccp-3`, siteName: customer, checkDate: '2026-08-23', category: '보존식', itemName: '중식 보존식 채취', measuredValue: '-18°C / 150g', assigneeName: '정영양사', correctiveAction: null, verificationValue: null, verifiedBy: null, verifiedAt: null, status: '완료' },
     ],
   };
 }

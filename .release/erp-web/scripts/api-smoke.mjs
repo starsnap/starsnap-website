@@ -18,14 +18,14 @@ async function request(path, init) {
   return { response, body };
 }
 
-function action(tenant, module, id, operation, idempotencyKey, evidence) {
+function action(tenant, module, id, operation, idempotencyKey) {
   return request('/api/erp', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify({ tenant, module, id, action: operation, evidence }),
+    body: JSON.stringify({ tenant, module, id, action: operation }),
   });
 }
 
@@ -129,20 +129,6 @@ const production = await action('DAON', 'production', 'daon-prod-1', 'complete',
 assert.equal(production.response.status, 200);
 assert.equal(production.body.status, '완료');
 
-const missingEvidence = await action('HANBIT', 'haccp', 'hanbit-haccp-1', 'resolve', 'smoke-haccp-missing-0001');
-assert.equal(missingEvidence.response.status, 422);
-
-const haccp = await action(
-  'HANBIT',
-  'haccp',
-  'hanbit-haccp-1',
-  'resolve',
-  'smoke-haccp-valid-0001',
-  { verificationValue: '5°C', correctiveAction: '문 닫힘과 적재 간격을 확인하고 재측정함' },
-);
-assert.equal(haccp.response.status, 200);
-assert.equal(haccp.body.status, '시정완료');
-
 const concurrent = await Promise.all([
   action('SAEBOM', 'meals', 'saebom-meal-1', 'confirm', 'smoke-concurrent-meal-0001'),
   action('SAEBOM', 'meals', 'saebom-meal-1', 'confirm', 'smoke-concurrent-meal-0002'),
@@ -152,11 +138,6 @@ assert.equal(concurrent.filter(({ body }) => body.alreadyApplied === true).lengt
 
 const hanbit = (await request('/api/erp?tenant=HANBIT')).body;
 assert.equal(hanbit.purchaseOrders.find((item) => item.id === 'hanbit-po-1').status, '승인');
-const verifiedHaccp = hanbit.haccpChecks.find((item) => item.id === 'hanbit-haccp-1');
-assert.equal(verifiedHaccp.status, '시정완료');
-assert.equal(verifiedHaccp.verificationValue, '5°C');
-assert.equal(verifiedHaccp.verifiedBy, 'local-demo@starsnap.local');
-assert.ok(verifiedHaccp.verifiedAt);
 
 const runToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
 const runId = `product-${runToken}`;
@@ -671,4 +652,4 @@ const crossTenantBulk = await bulkProductMutation(
 assert.equal(crossTenantBulk.response.status, 409);
 assert.equal(crossTenantBulk.body.rows[0].errors[0].code, 'PRODUCT_NOT_FOUND');
 
-console.log('StarSnap ERP API smoke passed: tenant boundaries, workflows, idempotency, HACCP evidence, 9-field product pricing, 10,000-row compact bulk limits, CRUD/status concurrency, and atomic Excel bulk create/update.');
+console.log('StarSnap ERP API smoke passed: tenant boundaries, workflows, idempotency, 9-field product pricing, 10,000-row compact bulk limits, CRUD/status concurrency, and atomic Excel bulk create/update.');

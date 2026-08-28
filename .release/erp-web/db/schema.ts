@@ -752,31 +752,6 @@ export const settlements = pgTable('settlements', {
   }),
 ]);
 
-export const haccpChecks = pgTable('haccp_checks', {
-  id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  siteId: text('site_id').notNull(),
-  checkDate: text('check_date').notNull(),
-  category: text('category').notNull(),
-  itemName: text('item_name').notNull(),
-  measuredValue: text('measured_value').notNull(),
-  assigneeName: text('assignee_name').notNull(),
-  correctiveAction: text('corrective_action'),
-  verificationValue: text('verification_value'),
-  verifiedBy: text('verified_by'),
-  verifiedAt: text('verified_at'),
-  status: text('status').notNull(),
-  ...auditColumns,
-}, (table) => [
-  index('idx_haccp_checks_tenant_date').on(table.tenantId, table.checkDate),
-  index('idx_haccp_checks_tenant_status').on(table.tenantId, table.status),
-  foreignKey({
-    columns: [table.tenantId, table.siteId],
-    foreignColumns: [sites.tenantId, sites.id],
-    name: 'fk_haccp_checks_tenant_site',
-  }),
-]);
-
 export const idempotencyKeys = pgTable('idempotency_keys', {
   key: text('key').notNull(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),

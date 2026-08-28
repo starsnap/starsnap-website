@@ -2,13 +2,11 @@ import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
-  CalendarCheck2,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
   Package,
   ShoppingBag,
-  Thermometer,
   TrendingUp,
   Truck,
   Users,
@@ -230,11 +228,10 @@ function Dashboard({ data, onNavigate }: Pick<ModuleViewProps, 'data' | 'onNavig
         </section>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2">
         {[
           { title: '발주 승인 필요', detail: `${metrics.pendingOrders}건이 결재를 기다리고 있습니다.`, module: 'purchasing' as ModuleId, icon: ShoppingBag },
           { title: '재고 위험 알림', detail: `${metrics.inventoryAlerts}개 품목의 수량 또는 기한을 확인하세요.`, module: 'inventory' as ModuleId, icon: AlertTriangle },
-          { title: '위생 시정조치', detail: `${metrics.openHaccpIssues}건이 확인자 처리를 기다리고 있습니다.`, module: 'haccp' as ModuleId, icon: Thermometer },
         ].map((item) => {
           const Icon = item.icon;
           return (
@@ -402,42 +399,6 @@ function SettlementView({ data, searchQuery, siteFilter }: ModuleViewProps) {
   );
 }
 
-function HaccpView({ data, searchQuery, siteFilter, pendingAction, membershipRole, onAction }: ModuleViewProps) {
-  const rows = matches(data.haccpChecks, searchQuery, siteFilter);
-  const completionRate = rows.length
-    ? Math.round((rows.filter((item) => item.status !== '시정필요').length / rows.length) * 100)
-    : null;
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_330px]">
-      <TablePanel title="일일 위생점검" description="점검값, 적합 여부와 시정조치 완료까지 기록합니다." count={rows.length}>
-        <table className="erp-table min-w-[940px]">
-          <thead><tr><th>점검일</th><th>구분</th><th>점검항목</th><th>사업장</th><th>측정값</th><th>담당자</th><th>상태</th><th className="text-right">처리</th></tr></thead>
-          <tbody>
-            {rows.length === 0 ? <EmptyRow columns={8} hasSourceRows={data.haccpChecks.length > 0} /> : rows.map((item) => (
-              <tr key={item.id}>
-                <td>{item.checkDate}</td><td className="font-bold">{item.category}</td><td><span className="block font-extrabold">{item.itemName}</span>{item.correctiveAction && <span className="mt-1 block max-w-[280px] truncate text-xs text-amber-700">{item.correctiveAction}</span>}</td>
-                <td>{item.siteName}</td><td className="font-black">{item.measuredValue}</td><td>{item.assigneeName}</td><td><StatusBadge status={item.status} /></td>
-                <td className="text-right">{item.status === '시정필요' && (membershipRole === 'viewer'
-                  ? <span className="text-xs font-semibold text-[var(--ss-text-muted)]">조회 전용</span>
-                  : <PrimaryAction disabled={pendingAction === item.id} onClick={() => onAction('haccp', item.id, 'resolve')}>시정 확인</PrimaryAction>)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TablePanel>
-      <section className="panel">
-        <p className="eyebrow">HACCP RECORD</p><h2 className="mt-1 text-base font-extrabold">오늘의 점검률</h2>
-        <div className="mt-5 grid place-items-center rounded-[var(--ss-radius-lg)] bg-[var(--ss-emphasis)] py-8 text-[var(--ss-on-emphasis)]">
-          <CalendarCheck2 size={28} className="text-[var(--ss-brand)]" />
-          <p className="mt-3 text-4xl font-bold">{completionRate === null ? <span aria-label="산출 불가">—</span> : `${completionRate}%`}</p>
-          <p className="mt-1 text-xs font-medium text-[var(--ss-neutral-300)]">필수 기록 완료</p>
-        </div>
-        <div className="mt-4 flex items-start gap-3 rounded-xl bg-red-50 p-4 text-red-900"><AlertTriangle size={19} className="shrink-0" /><p className="text-xs font-semibold leading-5">시정필요 건은 조치내용과 확인자 기록 없이는 마감할 수 없습니다.</p></div>
-      </section>
-    </div>
-  );
-}
-
 function SummaryCard({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
   return (
     <article className="flex min-h-[96px] items-center gap-4 rounded-[var(--ss-radius-lg)] border border-[var(--ss-border)] bg-[var(--ss-surface)] p-4 shadow-[var(--ss-shadow-sm)]">
@@ -488,7 +449,6 @@ export function ModuleView(props: ModuleViewProps) {
     case 'production': return <ProductionView {...props} />;
     case 'delivery': return <DeliveryView {...props} />;
     case 'settlement': return <SettlementView {...props} />;
-    case 'haccp': return <HaccpView {...props} />;
     default: return props.data.tenant.organizationType === 'BIDDER' ? (
       <div className="space-y-8">
         <NetworkDashboardSummary data={props.data} onNavigate={props.onNavigate} />

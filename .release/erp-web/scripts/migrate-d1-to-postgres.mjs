@@ -54,16 +54,16 @@ const tableDefinitions = [
   { table: 'production_orders', columns: [['id', 'text'], ['tenant_id', 'text'], ['site_id', 'text'], ['service_date', 'text'], ['menu_name', 'text'], ['planned_quantity', 'integer'], ['actual_quantity', 'integer'], ['core_temperature', 'integer'], ['status', 'text'], ['created_at', 'text'], ['updated_at', 'text']] },
   { table: 'deliveries', columns: [['id', 'text'], ['tenant_id', 'text'], ['site_id', 'text'], ['delivery_no', 'text'], ['scheduled_at', 'text'], ['driver_name', 'text'], ['vehicle_no', 'text'], ['servings', 'integer'], ['temperature', 'integer'], ['status', 'text'], ['created_at', 'text'], ['updated_at', 'text']] },
   { table: 'settlements', columns: [['id', 'text'], ['tenant_id', 'text'], ['site_id', 'text'], ['settlement_month', 'text'], ['actual_servings', 'integer'], ['sales_amount', 'integer'], ['ingredient_cost', 'integer'], ['status', 'text'], ['created_at', 'text'], ['updated_at', 'text']] },
-  { table: 'haccp_checks', columns: [['id', 'text'], ['tenant_id', 'text'], ['site_id', 'text'], ['check_date', 'text'], ['category', 'text'], ['item_name', 'text'], ['measured_value', 'text'], ['assignee_name', 'text'], ['corrective_action', 'text'], ['verification_value', 'text'], ['verified_by', 'text'], ['verified_at', 'text'], ['status', 'text'], ['created_at', 'text'], ['updated_at', 'text']] },
   { table: 'idempotency_keys', columns: [['tenant_id', 'text'], ['key', 'text'], ['request_hash', 'text'], ['response_json', 'text'], ['created_at', 'text'], ['lease_token', 'text'], ['lease_expires_at', 'text']] },
   { table: 'audit_logs', columns: [['id', 'text'], ['tenant_id', 'text'], ['actor', 'text'], ['action', 'text'], ['entity_type', 'text'], ['entity_id', 'text'], ['detail', 'text'], ['created_at', 'text']] },
 ];
 
 const transientSourceTables = ['product_bulk_staging', 'product_price_bulk_staging'];
 const sourceMetadataTables = ['_cf_METADATA', 'd1_migrations', '__drizzle_migrations'];
+const retiredTables = ['haccp_checks'];
 const replacedDestinationTables = [
   'erp_embeddings', 'product_bulk_staging', 'product_price_bulk_staging',
-  'idempotency_keys', 'audit_logs', 'haccp_checks', 'settlements', 'deliveries',
+  'idempotency_keys', 'audit_logs', 'settlements', 'deliveries',
   'production_orders', 'inventory_lots', 'purchase_orders', 'meal_plans',
   'product_monthly_prices', 'products', 'sites', 'tenants', 'product_price_v2_backup',
 ];
@@ -130,6 +130,33 @@ async function insertRows(client, definition, rows) {
   }
 }
 
+async function snapshotRetiredTables(client) {
+  const snapshots = new Map();
+  for (const table of retiredTables) {
+    const rows = (await client.query(`SELECT * FROM ${quoted(table)}`)).rows;
+    snapshots.set(table, { rows, hash: rowsSha256(rows) });
+  }
+  return snapshots;
+}
+
+async function restoreRetiredTables(client, snapshots) {
+  for (const [table, snapshot] of snapshots) {
+    if (snapshot.rows.length > 0) {
+      const result = await client.query(
+        `INSERT INTO ${quoted(table)} SELECT * FROM jsonb_populate_recordset(NULL::${quoted(table)}, $1::jsonb)`,
+        [JSON.stringify(snapshot.rows)],
+      );
+      if (result.rowCount !== snapshot.rows.length) {
+        throw new Error(`${table} retired-row restore count mismatch: ${result.rowCount}/${snapshot.rows.length}`);
+      }
+    }
+    const restoredRows = (await client.query(`SELECT * FROM ${quoted(table)}`)).rows;
+    if (rowsSha256(restoredRows) !== snapshot.hash) {
+      throw new Error(`${table} retired-row content mismatch after restore.`);
+    }
+  }
+}
+
 const source = new DatabaseSync(sourcePath, { readOnly: true });
 const pool = new Pool({ connectionString, max: 2, connectionTimeoutMillis: 10_000 });
 const client = await pool.connect();
@@ -156,6 +183,7 @@ try {
     ...tableDefinitions.map(({ table }) => table),
     ...transientSourceTables,
     ...sourceMetadataTables,
+    ...retiredTables,
   ]);
   const unknownSourceTables = [...sourceTables].filter((table) => !knownSourceTables.has(table));
   if (unknownSourceTables.length > 0) {
@@ -206,6 +234,7 @@ try {
     ...tableDefinitions.map(({ table }) => table),
     ...replacedDestinationTables,
     ...retainedDestinationTables,
+    ...retiredTables,
   ]);
   const unknownDestinationTables = destinationTables.rows
     .map(({ tablename }) => tablename)
@@ -246,12 +275,14 @@ try {
     if (Object.values(targetOnlyData.rows[0]).some((count) => Number(count) !== 0)) {
       throw new Error(`Refusing to erase PostgreSQL-only or in-flight data: ${JSON.stringify(targetOnlyData.rows[0])}`);
     }
-    await client.query(`TRUNCATE TABLE ${replacedDestinationTables.map(quoted).join(', ')}`);
+    const retiredSnapshots = await snapshotRetiredTables(client);
+    await client.query(`TRUNCATE TABLE ${[...retiredTables, ...replacedDestinationTables].map(quoted).join(', ')}`);
     await client.query('ALTER TABLE products DISABLE TRIGGER USER');
     for (const definition of tableDefinitions) {
       await insertRows(client, definition, sourceRows(source, definition));
     }
     await client.query('ALTER TABLE products ENABLE TRIGGER USER');
+    await restoreRetiredTables(client, retiredSnapshots);
 
     const destination = await destinationSnapshot(client);
     const destinationCounts = destination.counts;

@@ -3,7 +3,6 @@ import type {
   Delivery,
   ErpAction,
   ErpData,
-  HaccpCheck,
   InventoryLot,
   MealPlan,
   Product,
@@ -38,7 +37,7 @@ async function fetchErpDataWithClient(code: TenantCode, client: PoolClient): Pro
   if (!tenant) return null;
 
   const [tenants, sites, products, mealPlans, purchaseOrders, inventoryLots,
-    productionOrders, deliveries, settlements, haccpChecks, networkData] = await Promise.all([
+    productionOrders, deliveries, settlements, networkData] = await Promise.all([
     queryAll<TenantSummary>(
       `SELECT id, code, name, brand_color AS "brandColor",
          organization_type AS "organizationType"
@@ -118,17 +117,6 @@ async function fetchErpDataWithClient(code: TenantCode, client: PoolClient): Pro
       [tenant.id],
       client,
     ),
-    queryAll<HaccpCheck>(
-      `SELECT h.id, s.name AS "siteName", h.check_date AS "checkDate",
-        h.category, h.item_name AS "itemName", h.measured_value AS "measuredValue",
-        h.assignee_name AS "assigneeName", h.corrective_action AS "correctiveAction",
-        h.verification_value AS "verificationValue", h.verified_by AS "verifiedBy",
-        h.verified_at AS "verifiedAt", h.status
-       FROM haccp_checks h JOIN sites s ON s.id = h.site_id AND s.tenant_id = h.tenant_id
-       WHERE h.tenant_id = $1 ORDER BY h.check_date DESC, h.status DESC`,
-      [tenant.id],
-      client,
-    ),
     fetchNetworkDataWithClient(tenant, client),
   ]);
 
@@ -140,11 +128,10 @@ async function fetchErpDataWithClient(code: TenantCode, client: PoolClient): Pro
       inventoryAlerts: inventoryLots.filter((item) => item.status !== '정상').length,
       completedDeliveries: deliveries.filter((item) => item.status === '완료').length,
       totalDeliveries: deliveries.length,
-      openHaccpIssues: haccpChecks.filter((item) => item.status === '시정필요').length,
     },
     ...networkData,
     products, mealPlans, purchaseOrders, inventoryLots, productionOrders,
-    deliveries, settlements, haccpChecks,
+    deliveries, settlements,
   };
 }
 
@@ -154,7 +141,6 @@ const transitions = {
   'inventory:acknowledge': { table: 'inventory_lots', status: '확인완료', allowedStatuses: ['부족', '임박'], label: '재고 주의 확인' },
   'production:complete': { table: 'production_orders', status: '완료', allowedStatuses: ['마감대기', '작업중'], label: '생산 마감' },
   'delivery:complete': { table: 'deliveries', status: '완료', allowedStatuses: ['배송중'], label: '배송 완료' },
-  'haccp:resolve': { table: 'haccp_checks', status: '시정완료', allowedStatuses: ['시정필요'], label: '위생 시정 완료' },
 } as const;
 
 async function requestHash(action: ErpAction) {
@@ -163,7 +149,6 @@ async function requestHash(action: ErpAction) {
     module: action.module,
     id: action.id,
     action: action.action,
-    evidence: action.evidence ?? null,
   });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -235,21 +220,11 @@ export async function applyErpAction(action: ErpAction, idempotencyKey: string, 
       });
     }
 
-    const update = action.module === 'haccp'
-      ? await client.query(
-        `UPDATE ${transition.table}
-         SET status = $1, corrective_action = $2, verification_value = $3,
-           verified_by = $4, verified_at = $5, updated_at = $5
-         WHERE id = $6 AND tenant_id = $7 AND status = ANY($8::text[]) RETURNING id`,
-        [transition.status, action.evidence?.correctiveAction?.trim() || null,
-          action.evidence?.verificationValue?.trim() || null, actor, now,
-          action.id, tenant.id, [...allowed]],
-      )
-      : await client.query(
-        `UPDATE ${transition.table} SET status = $1, updated_at = $2
-         WHERE id = $3 AND tenant_id = $4 AND status = ANY($5::text[]) RETURNING id`,
-        [transition.status, now, action.id, tenant.id, [...allowed]],
-      );
+    const update = await client.query(
+      `UPDATE ${transition.table} SET status = $1, updated_at = $2
+       WHERE id = $3 AND tenant_id = $4 AND status = ANY($5::text[]) RETURNING id`,
+      [transition.status, now, action.id, tenant.id, [...allowed]],
+    );
 
     if (update.rowCount !== 1) {
       return releaseAndReturn(client, tenant.id, idempotencyKey, fingerprint, leaseToken, {

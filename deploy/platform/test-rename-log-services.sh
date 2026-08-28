@@ -77,6 +77,13 @@ docker() {
       target="${*: -1}"
       case "$*" in
         *'.Spec.TaskTemplate.ContainerSpec.Image'*)
+          if [[ "$target" == starsnap-log-* && -e "$(state local-target-images)" ]]; then
+            case "$target" in
+              *server) printf 'starsnap.invalid/platform/log-server:sha-current\n' ;;
+              *web) printf 'starsnap.invalid/platform/log-web:sha-current\n' ;;
+            esac
+            return 0
+          fi
           case "$target" in
             *server) printf '%s\n' "$FAKE_SERVER_IMAGE" ;;
             *web) printf '%s\n' "$FAKE_WEB_IMAGE" ;;
@@ -170,6 +177,14 @@ docker() {
             *web*) printf 'sha256:web-id\n' ;;
           esac
           ;;
+        *) return 1 ;;
+      esac
+      ;;
+    image:inspect)
+      target="${*: -1}"
+      case "$target" in
+        *server*) printf 'sha256:server-id\n' ;;
+        *web*) printf 'sha256:web-id\n' ;;
         *) return 1 ;;
       esac
       ;;
@@ -373,6 +388,7 @@ write_state old-web 0
 write_state new-server 1
 write_state new-web 1
 write_state caddy-config starsnap-company_caddyfile_0000000000000000
+: >"$(state local-target-images)"
 resume_output="$(state resume.out)"
 run_rename "$resume_output"
 test "$(read_state old-server)" = 0

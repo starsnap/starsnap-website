@@ -59,6 +59,18 @@ service_task_hash() {
     | sha256sum | awk '{print $1}'
 }
 
+verify_image_equivalence() {
+  local actual_reference="$1" expected_reference="$2" label="$3"
+  local actual_id expected_id
+  if [[ "$actual_reference" == "$expected_reference" ]]; then return 0; fi
+  actual_id="$(docker image inspect --format '{{.Id}}' "$actual_reference" 2>/dev/null || true)"
+  expected_id="$(docker image inspect --format '{{.Id}}' "$expected_reference" 2>/dev/null || true)"
+  if [[ -z "$actual_id" || "$actual_id" != "$expected_id" ]]; then
+    echo "$label image does not match the workflow-pinned image." >&2
+    return 1
+  fi
+}
+
 caddy_config_name() {
   docker service inspect \
     --format '{{range .Spec.TaskTemplate.ContainerSpec.Configs}}{{if eq .File.Name "/etc/caddy/Caddyfile"}}{{.ConfigName}}{{end}}{{end}}' \
@@ -358,8 +370,8 @@ else
   echo 'Resuming Log rename from verified exact-name services and Caddy route.'
 fi
 readonly server_image web_image
-test "$server_image" = "$HUB_SERVER_IMAGE"
-test "$web_image" = "$HUB_WEB_IMAGE"
+verify_image_equivalence "$server_image" "$HUB_SERVER_IMAGE" server
+verify_image_equivalence "$web_image" "$HUB_WEB_IMAGE" web
 
 if (( target_server_preexisting == 1 )); then
   test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$target_server")" = "$server_image"

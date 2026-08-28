@@ -25,10 +25,12 @@ The deploy job is disabled until all of the following exist:
   - `starsnap/starsnap-erp-web/.github/workflows/container.yml@refs/heads/main`
 - A repository variable named `SWARM_DEPLOY_ENABLED` in each repository. Keep it
   unset until all other controls are verified, then set it to `true` last.
-- A GitHub environment named `production` in every listed repository. It must
-  permit only that repository's protected default branch (`main` or `master` as
-  pinned above) and follow the organization's chosen reviewer and
-  administrator-bypass policy.
+- A `production` environment with `HamTory06` as required reviewer in the public
+  Website and SNS Web repositories. GitHub Free does not support configurable
+  environments or required reviewers for the private Admin, Log, ERP, and SNS
+  Backend repositories; those deployments therefore rely on manual dispatch,
+  the exact branch check, the fail-closed repository variable, and the selected
+  runner workflow allowlist.
 
 The runner registration token is one-time bootstrap material. Never commit it,
 write it into a stack file, or leave it in a long-lived service environment.

@@ -23,10 +23,13 @@ target_server_preexisting=0
 target_web_preexisting=0
 target_creation_attempted=0
 target_publish_port=false
+target_port_preexisting=0
+target_port_add_attempted=0
 caddy_update_attempted=0
 source_server_removal_attempted=0
 source_web_removal_attempted=0
 source_services_healthy=0
+resume_mode=0
 migration_complete=0
 
 service_exists() {
@@ -245,6 +248,10 @@ restore_source_services() {
 
 remove_target_host_port() {
   echo 'Rollback: checking the new server host port.' >&2
+  if (( target_port_add_attempted == 0 )); then
+    echo 'Rollback: port 8081 was not added by this run.' >&2
+    return 0
+  fi
   if ! service_exists "$target_server"; then return 0; fi
   if docker service inspect --format '{{range .Endpoint.Ports}}{{println .PublishedPort}}{{end}}' \
     "$target_server" | grep -Fxq '8081'; then
@@ -263,10 +270,17 @@ rollback_on_error() {
   if (( migration_complete == 1 )); then exit "$status"; fi
 
   if (( source_server_removal_attempted == 1 || source_web_removal_attempted == 1 )); then
-    echo 'Rollback: removing the new server host port and restoring legacy services.' >&2
-    if ! remove_target_host_port || ! restore_source_services; then
+    if (( resume_mode == 1 && target_port_preexisting == 1 )) \
+      && [[ "$previous_caddy_config" == "$new_caddy_config" ]]; then
+      echo 'Keeping the verified exact-name services, Caddy route, and preexisting host port.' >&2
       sources_healthy=0
       rollback_ok=0
+    else
+      echo 'Rollback: removing the new server host port and restoring legacy services.' >&2
+      if ! remove_target_host_port || ! restore_source_services; then
+        sources_healthy=0
+        rollback_ok=0
+      fi
     fi
   fi
 
@@ -350,6 +364,7 @@ if service_exists "$target_server"; then
   if docker service inspect --format '{{range .Endpoint.Ports}}{{println .PublishedPort}}{{end}}' \
     "$target_server" | grep -Fxq '8081'; then
     target_publish_port=true
+    target_port_preexisting=1
   fi
 fi
 if service_exists "$target_web"; then
@@ -365,6 +380,7 @@ if service_exists "$source_server" && service_exists "$source_web" \
   web_image="$(docker service inspect \
     --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$source_web")"
 else
+  resume_mode=1
   test "$target_server_preexisting" -eq 1
   test "$target_web_preexisting" -eq 1
   test "$previous_caddy_config" = "$new_caddy_config"
@@ -424,6 +440,7 @@ if service_exists "$source_server"; then
 fi
 
 if [[ "$target_publish_port" == false ]]; then
+  target_port_add_attempted=1
   docker service update --detach=true \
     --publish-add 'published=8081,target=8081,protocol=tcp,mode=host' \
     "$target_server" >/dev/null

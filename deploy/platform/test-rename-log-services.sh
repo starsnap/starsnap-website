@@ -22,6 +22,7 @@ reset_state() {
   local port_add_mode="$4" source_restore_mode="${5:-normal}"
   local post_caddy_source_health="${6:-normal}"
   local target_ensure_mode="${7:-normal}" initial_caddy_config="${8:-starsnap-company_caddyfile_previous}"
+  local manager_health_result="${9:-pass}"
   find "$FAKE_RENAME_ROOT" -mindepth 1 -delete
   write_state old-server 1
   write_state old-web 1
@@ -39,6 +40,7 @@ reset_state() {
   write_state source-restore-mode "$source_restore_mode"
   write_state post-caddy-source-health "$post_caddy_source_health"
   write_state target-ensure-mode "$target_ensure_mode"
+  write_state manager-health-result "$manager_health_result"
   : >"$(state events)"
 }
 
@@ -250,6 +252,7 @@ curl() {
   grep -Fq -- '--max-time 30' <<<"$*"
   if [[ "$*" == *'actuator/health'* ]]; then
     grep -Fq -- 'http://192.168.1.103:8081/actuator/health' <<<"$*"
+    if [[ "$(read_state manager-health-result)" != pass ]]; then return 1; fi
     printf '{"status":"UP"}\n'
     return 0
   fi
@@ -384,7 +387,6 @@ assert_contains "$precutover_caddy_output" 'CRITICAL: Log service rename rollbac
 
 reset_state pass normal normal normal
 write_state old-server 0
-write_state old-web 0
 write_state new-server 1
 write_state new-web 1
 write_state caddy-config starsnap-company_caddyfile_0000000000000000
@@ -414,5 +416,25 @@ test "$(read_state new-web)" = 1
 test "$(read_state target-port)" = 1
 if grep -Fxq target-port-add "$(state events)"; then exit 1; fi
 assert_contains "$resume_with_port_output" 'Log service rename verified: starsnap-hub_server -> starsnap-log-server, starsnap-hub_web -> starsnap-log-web'
+
+reset_state pass normal normal normal normal normal normal starsnap-company_caddyfile_0000000000000000 fail
+write_state old-server 0
+write_state new-server 1
+write_state new-web 1
+write_state target-port 1
+resume_port_failure_output="$(state resume-port-failure.out)"
+set +e
+run_rename "$resume_port_failure_output"
+resume_port_failure_status=$?
+set -e
+test "$resume_port_failure_status" -ne 0
+test "$(read_state new-server)" = 1
+test "$(read_state new-web)" = 1
+test "$(read_state target-port)" = 1
+test "$(read_state caddy-config)" = starsnap-company_caddyfile_0000000000000000
+if grep -Fxq target-port-remove "$(state events)"; then exit 1; fi
+if grep -Fxq sources-restore "$(state events)"; then exit 1; fi
+assert_contains "$resume_port_failure_output" 'Keeping the verified exact-name services, Caddy route, and preexisting host port.'
+assert_contains "$resume_port_failure_output" 'CRITICAL: Log service rename rollback could not be fully verified.'
 
 echo 'Log service rename tests passed.'

@@ -109,7 +109,7 @@ jobs:
           fi
 
       - name: Sign in to GHCR for private platform images
-        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' || inputs.phase == 'deploy-hub' }}
+        if: ${{ inputs.phase == 'stage' || inputs.phase == 'activate' || inputs.phase == 'deploy-erp' }}
         shell: bash
         env:
           GHCR_USERNAME: ${{ github.actor }}
@@ -117,6 +117,17 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" \
+            | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
+
+      - name: Sign in to GHCR for Hub web release
+        if: ${{ inputs.phase == 'deploy-hub' }}
+        shell: bash
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           printf '%s' "$GHCR_TOKEN" \
             | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
 

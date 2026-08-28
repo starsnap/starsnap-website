@@ -10,6 +10,7 @@ import {
 export interface EatDeliveryRegionFieldErrors {
   deliveryProvinceCode?: string;
   deliveryAreaCode?: string;
+  deliveryRegionCodes?: string;
 }
 
 const provinceAliasOverrides: Readonly<Record<string, readonly string[]>> = {
@@ -287,8 +288,53 @@ export function normalizeEatDeliveryRegionCodes(
   return { deliveryProvinceCode, deliveryAreaCode };
 }
 
+export function normalizeEatDeliveryRegionSelections(
+  values: readonly unknown[],
+) {
+  const normalized = [...new Set(values.map((value) => (
+    typeof value === 'string' ? normalizeCode(value) : ''
+  )).filter(Boolean))];
+  if (normalized.some((code) => !isBidProvinceCode(code) && !isBidAreaCode(code))) {
+    throw new Error('납품 지역을 다시 선택해 주세요.');
+  }
+
+  const selected = new Set(normalized);
+  const canonical: string[] = [];
+  for (const province of bidProvinceOptions) {
+    const areas = bidAreasForProvince(province.code);
+    if (selected.has(province.code)) {
+      canonical.push(province.code);
+      continue;
+    }
+    const selectedAreas = areas.filter((area) => selected.has(area.code));
+    if (selectedAreas.length === areas.length && areas.length > 0) {
+      canonical.push(province.code);
+    } else {
+      canonical.push(...selectedAreas.map((area) => area.code));
+    }
+  }
+  return canonical;
+}
+
+export function effectiveEatDeliveryRegionCodes(
+  query: Pick<EatBidQuery, 'deliveryProvinceCode' | 'deliveryAreaCode' | 'deliveryRegionCodes'>,
+) {
+  if (query.deliveryRegionCodes?.length) {
+    return normalizeEatDeliveryRegionSelections(query.deliveryRegionCodes);
+  }
+  const legacy = normalizeEatDeliveryRegionCodes(
+    query.deliveryProvinceCode,
+    query.deliveryAreaCode,
+  );
+  return legacy.deliveryAreaCode
+    ? [legacy.deliveryAreaCode]
+    : legacy.deliveryProvinceCode
+      ? [legacy.deliveryProvinceCode]
+      : [];
+}
+
 export function hasEatDeliveryRegionFilter(query: EatBidQuery) {
-  return Boolean(query.deliveryProvinceCode);
+  return effectiveEatDeliveryRegionCodes(query).length > 0;
 }
 
 export function matchesEatDeliveryRegion(
@@ -329,4 +375,30 @@ export function filterEatBidsByDeliveryRegion(
     deliveryProvinceCode,
     deliveryAreaCode,
   ));
+}
+
+export function matchesEatDeliveryRegions(
+  announcement: Pick<EatBidAnnouncement, 'deliveryAddress'>,
+  deliveryRegionCodes: readonly unknown[],
+) {
+  const normalized = normalizeEatDeliveryRegionSelections(deliveryRegionCodes);
+  if (normalized.length === 0) return true;
+  return normalized.some((code) => {
+    if (isBidProvinceCode(code)) {
+      return matchesEatDeliveryRegion(announcement, code, '');
+    }
+    const area = isBidAreaCode(code) ? bidAreaOption(code) : null;
+    return Boolean(area && matchesEatDeliveryRegion(
+      announcement,
+      area.provinceCode,
+      area.code,
+    ));
+  });
+}
+
+export function filterEatBidsByDeliveryRegions(
+  items: readonly EatBidAnnouncement[],
+  deliveryRegionCodes: readonly unknown[],
+) {
+  return items.filter((item) => matchesEatDeliveryRegions(item, deliveryRegionCodes));
 }

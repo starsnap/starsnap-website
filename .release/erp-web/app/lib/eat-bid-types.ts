@@ -9,6 +9,7 @@ export interface EatBidQuery {
   bidName: string;
   deliveryProvinceCode: string;
   deliveryAreaCode: string;
+  deliveryRegionCodes?: string[];
   cacheScope?: EatBidCacheScope;
   page: number;
   pageSize: number;

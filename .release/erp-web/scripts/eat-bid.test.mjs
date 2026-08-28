@@ -9,11 +9,14 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 let viteServer;
 let EatApiError;
 let EatBidRegionLookupError;
+let bidAreasForProvince;
 let filterEatBidsByDeliveryRegion;
 let fetchEatBidPage;
 let formatEatDate;
 let lookupEatBids;
 let matchesEatDeliveryRegion;
+let matchesEatDeliveryRegions;
+let normalizeEatDeliveryRegionSelections;
 let parseEatBidQuery;
 let parseEatBidXml;
 
@@ -41,7 +44,13 @@ before(async () => {
   ({ EatApiError, parseEatBidXml } = await viteServer.ssrLoadModule('/db/eat-api-parser.ts'));
   ({ fetchEatBidPage } = await viteServer.ssrLoadModule('/db/eat-api-client.ts'));
   ({ formatEatDate } = await viteServer.ssrLoadModule('/app/lib/eat-date-format.ts'));
-  ({ filterEatBidsByDeliveryRegion, matchesEatDeliveryRegion } = await viteServer.ssrLoadModule('/app/lib/eat-delivery-region.ts'));
+  ({ bidAreasForProvince } = await viteServer.ssrLoadModule('/app/lib/bid-regions.ts'));
+  ({
+    filterEatBidsByDeliveryRegion,
+    matchesEatDeliveryRegion,
+    matchesEatDeliveryRegions,
+    normalizeEatDeliveryRegionSelections,
+  } = await viteServer.ssrLoadModule('/app/lib/eat-delivery-region.ts'));
   ({ parseEatBidQuery } = await viteServer.ssrLoadModule('/app/lib/eat-bid-validation.ts'));
   ({ EatBidRegionLookupError, lookupEatBids } = await viteServer.ssrLoadModule('/db/eat-bid-service.ts'));
 });
@@ -380,6 +389,31 @@ test('matches delivery addresses by canonical province and administrative area',
   assert.deepEqual(filtered.map((item) => item.bidNo), ['SEOUL-JUNG']);
 });
 
+test('normalizes multiple delivery regions and matches any selected region', () => {
+  assert.deepEqual(
+    normalizeEatDeliveryRegionSelections(['30110', '11140', '30110']),
+    ['11140', '30110'],
+  );
+  assert.deepEqual(
+    normalizeEatDeliveryRegionSelections(
+      bidAreasForProvince('26').map((area) => area.code),
+    ),
+    ['26'],
+  );
+  assert.equal(matchesEatDeliveryRegions(
+    announcement('SEOUL', '서울특별시 중구 세종대로'),
+    ['30110', '11140'],
+  ), true);
+  assert.equal(matchesEatDeliveryRegions(
+    announcement('DAEJEON', '대전광역시 동구 중앙로'),
+    ['30110', '11140'],
+  ), true);
+  assert.equal(matchesEatDeliveryRegions(
+    announcement('BUSAN', '부산광역시 중구 중앙대로'),
+    ['30110', '11140'],
+  ), false);
+});
+
 test('parses repeated eAT announcement and item wrappers without losing leading zeroes', () => {
   const result = parseEatBidXml(successXml);
   assert.equal(result.total, 2);
@@ -604,6 +638,63 @@ test('normalizes valid search parameters and enforces the calendar three-month b
   const tooLong = parseEatBidQuery(parameters);
   assert.equal(tooLong.ok, false);
   assert.match(tooLong.message, /최대 3개월/);
+});
+
+test('parses repeated delivery region parameters while preserving legacy region parameters', () => {
+  const parameters = new URLSearchParams({
+    announcementStartDate: '2026-01-31',
+    announcementEndDate: '2026-04-30',
+    useOrganizationName: '교육청',
+  });
+  parameters.append('deliveryRegionCode', '30110');
+  parameters.append('deliveryRegionCode', '11140');
+  parameters.append('deliveryRegionCode', '30110');
+  const parsed = parseEatBidQuery(parameters);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.query.deliveryRegionCodes, ['11140', '30110']);
+  assert.equal(parsed.query.deliveryProvinceCode, '');
+  assert.equal(parsed.query.deliveryAreaCode, '');
+
+  parameters.set('deliveryRegionCode', 'INVALID');
+  const invalid = parseEatBidQuery(parameters);
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.message, /납품 지역/);
+});
+
+test('reuses the same cached eAT pages for multiple delivery-region combinations', async () => {
+  const items = [
+    announcement('SEOUL', '서울특별시 중구 세종대로'),
+    announcement('DAEJEON', '대전광역시 동구 중앙로'),
+    announcement('BUSAN', '부산광역시 중구 중앙대로'),
+  ];
+  const harness = memoryEatDependencies(items);
+  const query = {
+    announcementStartDate: '2026-07-29',
+    announcementEndDate: '2026-08-27',
+    useOrganizationName: '교육청',
+    demandOrganizationName: '',
+    bidName: '',
+    deliveryProvinceCode: '',
+    deliveryAreaCode: '',
+    deliveryRegionCodes: ['30110', '11140'],
+    page: 1,
+    pageSize: 20,
+  };
+
+  const result = await lookupEatBids(query, harness.dependencies);
+  assert.equal(result.source, 'EAT');
+  assert.equal(result.total, 2);
+  assert.deepEqual(result.items.map((item) => item.bidNo), ['SEOUL', 'DAEJEON']);
+  assert.equal(harness.fetchCount, 1);
+
+  const cached = await lookupEatBids({
+    ...query,
+    deliveryRegionCodes: ['26110'],
+  }, harness.dependencies);
+  assert.equal(cached.source, 'CACHE');
+  assert.equal(cached.total, 1);
+  assert.deepEqual(cached.items.map((item) => item.bidNo), ['BUSAN']);
+  assert.equal(harness.fetchCount, 1);
 });
 
 test('scans every cached eAT page before applying delivery region pagination', async () => {

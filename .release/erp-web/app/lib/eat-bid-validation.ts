@@ -1,5 +1,8 @@
 import type { EatBidQuery } from './eat-bid-types';
-import { validateEatDeliveryRegionCodes } from './eat-delivery-region';
+import {
+  normalizeEatDeliveryRegionSelections,
+  validateEatDeliveryRegionCodes,
+} from './eat-delivery-region';
 
 export type EatBidQueryFieldErrors = Partial<Record<
   | 'announcementStartDate'
@@ -8,7 +11,8 @@ export type EatBidQueryFieldErrors = Partial<Record<
   | 'demandOrganizationName'
   | 'bidName'
   | 'deliveryProvinceCode'
-  | 'deliveryAreaCode',
+  | 'deliveryAreaCode'
+  | 'deliveryRegionCodes',
   string
 >>;
 
@@ -76,15 +80,25 @@ export function validateEatBidQuery(query: EatBidQuery): EatBidQueryFieldErrors 
   ) {
     errors.bidName = '입찰공고명은 문자 또는 숫자를 포함한 100자 이하여야 합니다.';
   }
-  const deliveryRegionErrors = validateEatDeliveryRegionCodes(
-    query.deliveryProvinceCode,
-    query.deliveryAreaCode,
-  );
-  if (deliveryRegionErrors.deliveryProvinceCode) {
-    errors.deliveryProvinceCode = deliveryRegionErrors.deliveryProvinceCode;
-  }
-  if (deliveryRegionErrors.deliveryAreaCode) {
-    errors.deliveryAreaCode = deliveryRegionErrors.deliveryAreaCode;
+  if (query.deliveryRegionCodes?.length) {
+    try {
+      normalizeEatDeliveryRegionSelections(query.deliveryRegionCodes);
+    } catch (error) {
+      errors.deliveryRegionCodes = error instanceof Error
+        ? error.message
+        : '납품 지역을 다시 선택해 주세요.';
+    }
+  } else {
+    const deliveryRegionErrors = validateEatDeliveryRegionCodes(
+      query.deliveryProvinceCode,
+      query.deliveryAreaCode,
+    );
+    if (deliveryRegionErrors.deliveryProvinceCode) {
+      errors.deliveryProvinceCode = deliveryRegionErrors.deliveryProvinceCode;
+    }
+    if (deliveryRegionErrors.deliveryAreaCode) {
+      errors.deliveryAreaCode = deliveryRegionErrors.deliveryAreaCode;
+    }
   }
   return errors;
 }
@@ -97,6 +111,17 @@ export function parseEatBidQuery(parameters: URLSearchParams): EatBidQueryParseR
   const bidName = normalizeText(parameters.get('bidName'));
   const deliveryProvinceCode = normalizeText(parameters.get('deliveryProvinceCode'));
   const deliveryAreaCode = normalizeText(parameters.get('deliveryAreaCode'));
+  let deliveryRegionCodes: string[];
+  try {
+    deliveryRegionCodes = normalizeEatDeliveryRegionSelections(
+      parameters.getAll('deliveryRegionCode'),
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : '납품 지역을 다시 선택해 주세요.',
+    };
+  }
   const page = positiveInteger(parameters.get('page'), 1);
   const pageSize = positiveInteger(parameters.get('pageSize'), 20);
   if (page === null || page > 500 || pageSize === null || pageSize > 50) {
@@ -110,6 +135,7 @@ export function parseEatBidQuery(parameters: URLSearchParams): EatBidQueryParseR
     bidName,
     deliveryProvinceCode,
     deliveryAreaCode,
+    deliveryRegionCodes,
     page,
     pageSize,
   };
@@ -120,6 +146,7 @@ export function parseEatBidQuery(parameters: URLSearchParams): EatBidQueryParseR
     ?? fieldErrors.demandOrganizationName
     ?? fieldErrors.bidName
     ?? fieldErrors.deliveryProvinceCode
-    ?? fieldErrors.deliveryAreaCode;
+    ?? fieldErrors.deliveryAreaCode
+    ?? fieldErrors.deliveryRegionCodes;
   return firstError ? { ok: false, message: firstError } : { ok: true, query };
 }

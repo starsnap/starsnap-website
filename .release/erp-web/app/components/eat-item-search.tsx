@@ -9,11 +9,11 @@ import {
 } from 'react';
 import { ChevronLeft, ChevronRight, Database, Search } from 'lucide-react';
 import {
+  bidAreaOption,
   bidAreasForProvince,
   bidProvinceOptions,
   isBidAreaCode,
   isBidProvinceCode,
-  type BidAreaCode,
   type BidProvinceCode,
 } from '../lib/bid-regions';
 import type {
@@ -28,7 +28,11 @@ import {
   type EatBidQueryFieldErrors,
 } from '../lib/eat-bid-validation';
 import { formatEatDate } from '../lib/eat-date-format';
-import { validateEatDeliveryRegionCodes } from '../lib/eat-delivery-region';
+import {
+  effectiveEatDeliveryRegionCodes,
+  normalizeEatDeliveryRegionSelections,
+  validateEatDeliveryRegionCodes,
+} from '../lib/eat-delivery-region';
 import type { TenantCode } from '../lib/erp-types';
 
 const pageSize = 20;
@@ -118,6 +122,18 @@ function parseQuery(value: unknown): EatBidQuery {
   if (deliveryRegionErrors.deliveryProvinceCode || deliveryRegionErrors.deliveryAreaCode) {
     throw new Error('eAT 현품 조회 응답 지역 형식이 올바르지 않습니다.');
   }
+  let deliveryRegionCodes: string[];
+  try {
+    deliveryRegionCodes = Array.isArray(value.deliveryRegionCodes)
+      ? normalizeEatDeliveryRegionSelections(value.deliveryRegionCodes)
+      : effectiveEatDeliveryRegionCodes({
+        deliveryProvinceCode,
+        deliveryAreaCode,
+        deliveryRegionCodes: [],
+      });
+  } catch {
+    throw new Error('eAT 현품 조회 응답 지역 형식이 올바르지 않습니다.');
+  }
   return {
     announcementStartDate: requiredString(value, 'announcementStartDate'),
     announcementEndDate: requiredString(value, 'announcementEndDate'),
@@ -126,6 +142,7 @@ function parseQuery(value: unknown): EatBidQuery {
     bidName: requiredString(value, 'bidName'),
     deliveryProvinceCode,
     deliveryAreaCode,
+    deliveryRegionCodes,
     page: requiredInteger(value, 'page', 1),
     pageSize: requiredInteger(value, 'pageSize', 1),
   };
@@ -171,9 +188,23 @@ function sameSearchCriteria(left: EatBidQuery, right: EatBidQuery) {
     && left.useOrganizationName === right.useOrganizationName
     && left.demandOrganizationName === right.demandOrganizationName
     && left.bidName === right.bidName
-    && left.deliveryProvinceCode === right.deliveryProvinceCode
-    && left.deliveryAreaCode === right.deliveryAreaCode
+    && effectiveEatDeliveryRegionCodes(left).join('|')
+      === effectiveEatDeliveryRegionCodes(right).join('|')
     && left.pageSize === right.pageSize;
+}
+
+function deliveryRegionSummary(codes: readonly string[]) {
+  if (codes.length === 0) return '전국';
+  const labels = codes.map((code) => {
+    if (isBidProvinceCode(code)) {
+      const province = bidProvinceOptions.find((option) => option.code === code);
+      return province ? `${province.shortLabel} 전체` : code;
+    }
+    return isBidAreaCode(code) ? bidAreaOption(code)?.fullName ?? code : code;
+  });
+  return labels.length <= 3
+    ? labels.join(' · ')
+    : `${labels.slice(0, 3).join(' · ')} 외 ${labels.length - 3}개 지역`;
 }
 
 function displayDateTime(value: string) {
@@ -253,7 +284,7 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
   const [demandOrganizationName, setDemandOrganizationName] = useState('');
   const [bidName, setBidName] = useState('');
   const [deliveryProvinceCode, setDeliveryProvinceCode] = useState<BidProvinceCode | ''>('');
-  const [deliveryAreaCode, setDeliveryAreaCode] = useState<BidAreaCode | ''>('');
+  const [deliveryRegionCodes, setDeliveryRegionCodes] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<EatBidQueryFieldErrors>({});
   const [activeQuery, setActiveQuery] = useState<EatBidQuery | null>(null);
   const [result, setResult] = useState<EatBidLookupResponse | null>(null);
@@ -265,6 +296,14 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
   const deliveryAreaOptions = deliveryProvinceCode
     ? bidAreasForProvince(deliveryProvinceCode)
     : [];
+  const selectedProvinceAll = deliveryProvinceCode
+    ? deliveryRegionCodes.includes(deliveryProvinceCode)
+    : false;
+  const selectedAreaCount = deliveryProvinceCode
+    ? selectedProvinceAll
+      ? deliveryAreaOptions.length
+      : deliveryAreaOptions.filter((area) => deliveryRegionCodes.includes(area.code)).length
+    : 0;
 
   useEffect(() => () => activeController.current?.abort(), []);
 
@@ -290,8 +329,9 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
     });
     if (query.demandOrganizationName) parameters.set('demandOrganizationName', query.demandOrganizationName);
     if (query.bidName) parameters.set('bidName', query.bidName);
-    if (query.deliveryProvinceCode) parameters.set('deliveryProvinceCode', query.deliveryProvinceCode);
-    if (query.deliveryAreaCode) parameters.set('deliveryAreaCode', query.deliveryAreaCode);
+    for (const code of effectiveEatDeliveryRegionCodes(query)) {
+      parameters.append('deliveryRegionCode', code);
+    }
 
     try {
       const response = await fetch(`/api/erp/eat/bids?${parameters.toString()}`, {
@@ -326,8 +366,9 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
       useOrganizationName: useOrganizationName.normalize('NFKC').trim().replace(/\s+/g, ' '),
       demandOrganizationName: demandOrganizationName.normalize('NFKC').trim().replace(/\s+/g, ' '),
       bidName: bidName.normalize('NFKC').trim().replace(/\s+/g, ' '),
-      deliveryProvinceCode,
-      deliveryAreaCode,
+      deliveryProvinceCode: '',
+      deliveryAreaCode: '',
+      deliveryRegionCodes: normalizeEatDeliveryRegionSelections(deliveryRegionCodes),
       page: 1,
       pageSize,
     };
@@ -382,64 +423,103 @@ export function EatItemSearch({ tenant }: { tenant: TenantCode }) {
             {fieldErrors.demandOrganizationName ? <p id={`${generatedId}-demand-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.demandOrganizationName}</p> : null}
           </div>
         </div>
-        <fieldset className="min-w-0">
+        <fieldset className="min-w-0 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface-subtle)] p-3 sm:p-4">
           <legend className="text-sm font-semibold">납품 지역 <span className="text-xs font-medium text-[var(--ss-text-muted)]">선택</span></legend>
-          <div className="mt-1.5 grid min-w-0 gap-3 sm:grid-cols-2">
-            <div className="min-w-0">
-              <label htmlFor={`${generatedId}-delivery-province`} className="block text-xs font-semibold text-[var(--ss-text-subtle)]">시·도</label>
+          <div className="mt-1.5 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
+            <div className="min-w-0 lg:w-80 lg:shrink-0">
+              <label htmlFor={`${generatedId}-delivery-province`} className="block text-xs font-semibold text-[var(--ss-text-subtle)]">시·도 탐색</label>
               <select
                 id={`${generatedId}-delivery-province`}
                 value={deliveryProvinceCode}
                 disabled={loading}
-                aria-invalid={Boolean(fieldErrors.deliveryProvinceCode)}
-                aria-describedby={`${generatedId}-delivery-help${fieldErrors.deliveryProvinceCode ? ` ${generatedId}-delivery-province-error` : ''}`}
+                aria-invalid={Boolean(fieldErrors.deliveryRegionCodes)}
+                aria-describedby={`${generatedId}-delivery-help${fieldErrors.deliveryRegionCodes ? ` ${generatedId}-delivery-region-error` : ''}`}
                 onChange={(event) => {
                   const nextCode = event.target.value;
                   setDeliveryProvinceCode(isBidProvinceCode(nextCode) ? nextCode : '');
-                  setDeliveryAreaCode('');
                   setFieldErrors((current) => ({
                     ...current,
                     deliveryProvinceCode: undefined,
                     deliveryAreaCode: undefined,
+                    deliveryRegionCodes: undefined,
                   }));
                 }}
                 className="star-control mt-1.5 min-h-11 w-full min-w-0 px-3 text-sm"
               >
-                <option value="">전국</option>
+                <option value="">시·도를 선택해 주세요</option>
                 {bidProvinceOptions.map((option) => (
                   <option key={option.code} value={option.code}>{option.label}</option>
                 ))}
               </select>
-              {fieldErrors.deliveryProvinceCode ? <p id={`${generatedId}-delivery-province-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.deliveryProvinceCode}</p> : null}
             </div>
-            <div className="min-w-0">
-              <label htmlFor={`${generatedId}-delivery-area`} className="block text-xs font-semibold text-[var(--ss-text-subtle)]">행정구</label>
-              <select
-                id={`${generatedId}-delivery-area`}
-                value={deliveryAreaCode}
-                disabled={loading || !deliveryProvinceCode || deliveryAreaOptions.length === 0}
-                aria-invalid={Boolean(fieldErrors.deliveryAreaCode)}
-                aria-describedby={`${generatedId}-delivery-help${fieldErrors.deliveryAreaCode ? ` ${generatedId}-delivery-area-error` : ''}`}
-                onChange={(event) => {
-                  const nextCode = event.target.value;
-                  const belongsToProvince = isBidAreaCode(nextCode)
-                    && deliveryAreaOptions.some((area) => area.code === nextCode);
-                  setDeliveryAreaCode(belongsToProvince ? nextCode : '');
-                  setFieldErrors((current) => ({ ...current, deliveryAreaCode: undefined }));
-                }}
-                className="star-control mt-1.5 min-h-11 w-full min-w-0 px-3 text-sm"
-              >
-                <option value="">{deliveryProvinceCode ? '행정구 전체' : '시·도를 먼저 선택해 주세요'}</option>
-                {deliveryAreaOptions.map((area) => (
-                  <option key={area.code} value={area.code}>
-                    {area.localName === deliveryProvince?.label ? `${area.localName} 전체` : area.localName}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.deliveryAreaCode ? <p id={`${generatedId}-delivery-area-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.deliveryAreaCode}</p> : null}
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="min-w-0 break-words text-xs font-semibold text-[var(--ss-text-subtle)]">
+                선택 지역: <span className="font-extrabold text-[var(--ss-text)]">{deliveryRegionSummary(deliveryRegionCodes)}</span>
+              </p>
+              {deliveryRegionCodes.length > 0 ? (
+                <button type="button" disabled={loading} onClick={() => { setDeliveryRegionCodes([]); setFieldErrors((current) => ({ ...current, deliveryRegionCodes: undefined })); }} className="star-secondary-button min-h-11 w-full shrink-0 px-3 text-xs sm:w-auto">전체 해제</button>
+              ) : null}
             </div>
           </div>
-          <p id={`${generatedId}-delivery-help`} className="mt-1.5 text-xs leading-5 text-[var(--ss-text-muted)]">eAT가 제공하는 납품장소 주소를 기준으로 검색합니다. 지역을 선택한 첫 조회는 전체 결과를 확인하므로 조금 더 걸릴 수 있습니다.</p>
+          {deliveryProvinceCode ? (
+            <div className="mt-3 rounded-[var(--ss-radius-md)] border border-[var(--ss-border)] bg-[var(--ss-surface)] p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-extrabold">{deliveryProvince?.label} 행정구 · {selectedAreaCount}/{deliveryAreaOptions.length}개 선택</p>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    const provinceCode = deliveryProvinceCode;
+                    const areaCodes = deliveryAreaOptions.map((area) => area.code);
+                    const areaCodeSet = new Set<string>(areaCodes);
+                    setDeliveryRegionCodes((current) => normalizeEatDeliveryRegionSelections(
+                      selectedProvinceAll
+                        ? current.filter((code) => code !== provinceCode && !areaCodeSet.has(code))
+                        : [...current.filter((code) => code !== provinceCode && !areaCodeSet.has(code)), provinceCode],
+                    ));
+                    setFieldErrors((current) => ({ ...current, deliveryRegionCodes: undefined }));
+                  }}
+                  className="star-secondary-button min-h-11 w-full px-3 text-xs sm:w-auto"
+                >
+                  현재 시·도 {selectedProvinceAll ? '전체 해제' : '전체 선택'}
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {deliveryAreaOptions.map((area) => {
+                  const checked = selectedProvinceAll || deliveryRegionCodes.includes(area.code);
+                  return (
+                    <label key={area.code} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-[var(--ss-radius-md)] border px-3 py-2 text-sm font-semibold ${checked ? 'border-[var(--ss-border-strong)] bg-[var(--ss-brand-soft)]' : 'border-[var(--ss-border)] bg-[var(--ss-surface)]'} ${loading ? 'cursor-not-allowed opacity-60' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={loading}
+                        onChange={() => {
+                          const provinceCode = deliveryProvinceCode;
+                          const areaCodes = deliveryAreaOptions.map((option) => option.code);
+                          setDeliveryRegionCodes((current) => {
+                            const next = new Set(current);
+                            if (next.delete(provinceCode)) {
+                              areaCodes.forEach((code) => next.add(code));
+                            }
+                            if (next.has(area.code)) next.delete(area.code);
+                            else next.add(area.code);
+                            return normalizeEatDeliveryRegionSelections([...next]);
+                          });
+                          setFieldErrors((current) => ({ ...current, deliveryRegionCodes: undefined }));
+                        }}
+                        className="size-4 shrink-0 accent-[var(--ss-brand)]"
+                      />
+                      <span className="min-w-0 break-words">{area.localName}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 rounded-[var(--ss-radius-md)] border border-dashed border-[var(--ss-border-strong)] bg-[var(--ss-surface)] px-3 py-4 text-sm font-semibold text-[var(--ss-text-muted)]">시·도를 선택하면 여러 행정구를 한 번에 선택할 수 있습니다. 선택하지 않으면 전국을 조회합니다.</p>
+          )}
+          <p id={`${generatedId}-delivery-help`} className="mt-2 text-xs leading-5 text-[var(--ss-text-muted)]">시·도를 바꿔도 기존 선택은 유지됩니다. 선택한 지역 중 하나라도 납품장소와 일치하는 공고를 조회하며, 첫 지역 조회는 전체 결과를 확인하므로 조금 더 걸릴 수 있습니다.</p>
+          {fieldErrors.deliveryRegionCodes ? <p id={`${generatedId}-delivery-region-error`} role="alert" className="mt-1.5 text-xs font-semibold text-[var(--ss-danger)]">{fieldErrors.deliveryRegionCodes}</p> : null}
         </fieldset>
         <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="min-w-0">

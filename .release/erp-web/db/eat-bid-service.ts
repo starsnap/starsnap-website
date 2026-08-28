@@ -5,8 +5,9 @@ import type {
   EatBidQuery,
 } from '@/app/lib/eat-bid-types';
 import {
+  effectiveEatDeliveryRegionCodes,
   hasEatDeliveryRegionFilter,
-  matchesEatDeliveryRegion,
+  matchesEatDeliveryRegions,
 } from '@/app/lib/eat-delivery-region';
 import { fetchEatBidPage } from './eat-api-client';
 import {
@@ -154,6 +155,7 @@ function upstreamPageQuery(query: EatBidQuery, page: number): EatBidQuery {
     ...query,
     deliveryProvinceCode: '',
     deliveryAreaCode: '',
+    deliveryRegionCodes: [],
     cacheScope: 'REGIONAL_SCAN_V1',
     page,
     pageSize: regionalScanPageSize,
@@ -235,10 +237,9 @@ function collectRegionalPage(
       );
     }
     accumulator.bidNumbers.add(item.bidNo);
-    if (!matchesEatDeliveryRegion(
+    if (!matchesEatDeliveryRegions(
       item,
-      query.deliveryProvinceCode,
-      query.deliveryAreaCode,
+      effectiveEatDeliveryRegionCodes(query),
     )) continue;
     if (
       accumulator.filteredTotal >= resultOffset

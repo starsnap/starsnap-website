@@ -4,7 +4,11 @@ import type {
   EatBidItemSpec,
   EatBidQuery,
 } from '@/app/lib/eat-bid-types';
-import { normalizeEatDeliveryRegionCodes } from '@/app/lib/eat-delivery-region';
+import {
+  effectiveEatDeliveryRegionCodes,
+  normalizeEatDeliveryRegionCodes,
+  normalizeEatDeliveryRegionSelections,
+} from '@/app/lib/eat-delivery-region';
 import { ensureDatabase } from './bootstrap';
 import { queryAll, queryOne, withTransaction } from './postgres';
 
@@ -149,10 +153,15 @@ export function normalizeEatBidQuery(query: EatBidQuery): EatBidQuery {
   if (query.cacheScope && query.cacheScope !== 'REGIONAL_SCAN_V1') {
     throw new Error('eAT 내부 캐시 범위가 올바르지 않습니다.');
   }
-  const deliveryRegion = normalizeEatDeliveryRegionCodes(
-    query.deliveryProvinceCode,
-    query.deliveryAreaCode,
+  const deliveryRegionCodes = normalizeEatDeliveryRegionSelections(
+    query.deliveryRegionCodes ?? [],
   );
+  const deliveryRegion = deliveryRegionCodes.length > 0
+    ? { deliveryProvinceCode: '', deliveryAreaCode: '' }
+    : normalizeEatDeliveryRegionCodes(
+      query.deliveryProvinceCode,
+      query.deliveryAreaCode,
+    );
   const normalized: EatBidQuery = {
     announcementStartDate: normalizeDate(query.announcementStartDate, '공고 시작일'),
     announcementEndDate: normalizeDate(query.announcementEndDate, '공고 종료일'),
@@ -160,6 +169,7 @@ export function normalizeEatBidQuery(query: EatBidQuery): EatBidQuery {
     demandOrganizationName: normalizeText(query.demandOrganizationName),
     bidName: normalizeText(query.bidName),
     ...deliveryRegion,
+    deliveryRegionCodes,
     ...(query.cacheScope ? { cacheScope: query.cacheScope } : {}),
     page: positiveInteger(query.page, '페이지'),
     pageSize: positiveInteger(query.pageSize, '페이지 크기'),
@@ -180,7 +190,7 @@ async function sha256(value: string) {
 
 export async function eatBidQueryHash(query: EatBidQuery) {
   const normalized = normalizeEatBidQuery(query);
-  if (normalized.deliveryProvinceCode) {
+  if (effectiveEatDeliveryRegionCodes(normalized).length > 0) {
     throw new Error('납품 지역 필터는 eAT 원본 페이지 캐시 키로 사용할 수 없습니다.');
   }
   const canonical = JSON.stringify({

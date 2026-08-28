@@ -227,7 +227,7 @@ services:
       EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key
       EAT_CACHE_TTL_MINUTES: "360"
       HUB_SERVER_LOG_TIMEOUT_MS: "750"
-      HUB_SERVER_LOG_URL: http://starsnap-log_server:8081/api/server-logs
+      HUB_SERVER_LOG_URL: http://starsnap-log-server:8081/api/server-logs
       PGPOOL_MAX: "1"
       PGSSL: disable
       SITE_ORIGIN: https://erp.starsnap.kr

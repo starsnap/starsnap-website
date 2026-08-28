@@ -125,7 +125,8 @@ proved healthy.
    destination to the target Hub. Its state file enables an explicit restore.
 9. Keep the new Caddy routes out of the preparation commit. Dispatch
    `switch-log` with confirmation `SWITCH-MAIN-API-LOG` to update the
-   existing SNS API log destination to `http://starsnap-log_server:8081`, then
+   existing SNS API log destination to the valid-host compatibility alias
+   `http://starsnap-log-server:8081`, then
    merge the separate Caddy cutover commit and require internal plus external
    checks for SNS, Chat, ERP, Admin, and Log.
 10. While the manager-local Ollama service is still healthy, dispatch

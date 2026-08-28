@@ -201,8 +201,10 @@ docker() {
       if [[ "$target" == caddy-container && "$*" == *"https://127.0.0.1/"* ]]; then
         if [[ "$(read_state route-result)" == pass ]]; then printf '<title>StarSnap Log Dashboard</title>\n'; else return 1; fi
       elif [[ "$target" == caddy-container && "$*" == *"starsnap-log_web"* ]]; then
+        grep -Fq -- '--header=Host: log.starsnap.kr' <<<"$*"
         printf '<title>StarSnap Log Dashboard</title>\n'
       elif [[ "$target" == caddy-container && "$*" == *"starsnap-log_server"* ]]; then
+        grep -Fq -- '--header=Host: log.starsnap.kr' <<<"$*"
         printf '{"status":"UP"}\n'
       else
         return 0

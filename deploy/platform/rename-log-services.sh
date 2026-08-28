@@ -197,10 +197,10 @@ ensure_caddy_config() {
 verify_from_caddy() {
   local container web_body health_body
   container="$(single_running_container "$caddy_service")"
-  web_body="$(docker exec "$container" wget --quiet --output-document=- \
+  web_body="$(docker exec "$container" wget --quiet --header='Host: log.starsnap.kr' --output-document=- \
     "http://$target_web:5173/")"
   grep -Fq '<title>StarSnap Log Dashboard</title>' <<<"$web_body"
-  health_body="$(docker exec "$container" wget --quiet --output-document=- \
+  health_body="$(docker exec "$container" wget --quiet --header='Host: log.starsnap.kr' --output-document=- \
     "http://$target_server:8081/actuator/health")"
   grep -Fq '"status":"UP"' <<<"$health_body"
 }

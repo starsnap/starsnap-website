@@ -6,7 +6,7 @@ readonly mode="${1:-}"
 readonly api_service="starsnap-main_api"
 readonly hub_service="starsnap-log_server"
 readonly probe_service="starsnap-erp_web"
-readonly new_url="http://starsnap-log_server:8081"
+readonly new_url="http://starsnap-log-server:8081"
 readonly marker_name="starsnap-main-api-log-route-pre-20260827"
 readonly route_timeout_seconds="${STARSNAP_API_LOG_ROUTE_TIMEOUT_SECONDS:-900}"
 readonly stable_observations_required="${STARSNAP_API_LOG_ROUTE_STABLE_OBSERVATIONS:-20}"
@@ -204,7 +204,7 @@ case "$mode" in
       fi
       exit 1
     fi
-    echo "SNS API log destination now uses starsnap-log_server over the Swarm overlay."
+    echo "SNS API log destination now uses the starsnap-log-server compatibility alias over the Swarm overlay."
     ;;
   restore)
     case "${ALLOW_API_LOG_ROUTE:-}" in

@@ -32,6 +32,16 @@ export interface SchoolSearchPage {
 export type SelectableSchoolForBid = SchoolSearchResult;
 type SchoolSearchRow = SchoolSearchResult & { totalCount: number };
 
+export interface NeisMealSchool {
+  bidId: string;
+  schoolId: string;
+  schoolName: string;
+  officeCode: string;
+  schoolCode: string;
+  contractStart: string;
+  contractEnd: string;
+}
+
 const MAX_SEARCH_LIMIT = 50;
 const SCHOOL_SOURCE_PATTERN = /^[A-Z0-9][A-Z0-9._-]{0,63}$/;
 
@@ -163,5 +173,32 @@ export async function getSelectableSchoolForBid(
      FOR SHARE OF school, area`,
     [schoolId],
     client,
+  );
+}
+
+export async function getNeisMealSchoolForBidder(
+  bidderTenantId: string,
+  schoolBidId: string,
+): Promise<NeisMealSchool | undefined> {
+  await ensureDatabase();
+  return queryOne<NeisMealSchool>(
+    `SELECT bid.id AS "bidId", school.id AS "schoolId", school.name AS "schoolName",
+       school.source_office_code AS "officeCode",
+       school.source_school_code AS "schoolCode",
+       bid.contract_start AS "contractStart", bid.contract_end AS "contractEnd"
+     FROM school_bids bid
+     JOIN tenants bidder
+       ON bidder.id = bid.bidder_tenant_id
+      AND bidder.status = 'ACTIVE'
+      AND bidder.organization_type = 'BIDDER'
+     JOIN schools school
+       ON school.id = bid.school_id
+      AND school.source = 'NEIS_SCHOOL_INFO'
+      AND school.active = TRUE
+      AND school.mapping_status = 'MAPPED'
+     WHERE bid.id = $1
+       AND bid.bidder_tenant_id = $2
+       AND bid.status IN ('AWARDED', 'ACTIVE')`,
+    [schoolBidId, bidderTenantId],
   );
 }

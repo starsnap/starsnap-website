@@ -23,6 +23,7 @@ function runWriter(env) {
       || name.startsWith('ERP_')
       || name.startsWith('HUB_SERVER_LOG_')
       || name.startsWith('EAT_')
+      || name.startsWith('NEIS_')
       || name.startsWith('STARSNAP_WORKER_')
     ) delete childEnv[name];
   }
@@ -45,13 +46,14 @@ function runWriter(env) {
   });
 }
 
-test('propagates public bindings and keeps Hub and eAT secrets out of Wrangler vars', async () => {
+test('propagates public bindings and keeps Hub, eAT, and NEIS secrets out of Wrangler vars', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'starsnap-worker-config-'));
   const source = path.join(directory, 'wrangler.json');
   const target = path.join(directory, 'wrangler.runtime.json');
   const secretsTarget = path.join(directory, '.dev.vars');
   const secret = 'test-only-hub-secret';
   const eatSecret = 'test-only-eat-service-key';
+  const neisSecret = 'test-only-neis-api-key';
 
   try {
     await writeFile(source, JSON.stringify({
@@ -60,6 +62,7 @@ test('propagates public bindings and keeps Hub and eAT secrets out of Wrangler v
         SITE_ORIGIN: 'https://erp.starsnap.kr',
         HUB_SERVER_LOG_SECRET: 'stale-secret-must-be-removed',
         EAT_API_SERVICE_KEY: 'stale-eat-secret-must-be-removed',
+        NEIS_API_KEY: 'stale-neis-secret-must-be-removed',
       },
     }));
 
@@ -72,6 +75,7 @@ test('propagates public bindings and keeps Hub and eAT secrets out of Wrangler v
       HUB_SERVER_LOG_SECRET: secret,
       EAT_CACHE_TTL_MINUTES: '360',
       EAT_API_SERVICE_KEY: eatSecret,
+      NEIS_API_KEY: neisSecret,
     });
 
     const runtimeConfigText = await readFile(target, 'utf8');
@@ -84,17 +88,20 @@ test('propagates public bindings and keeps Hub and eAT secrets out of Wrangler v
     assert.equal(runtimeConfig.vars.SITE_ORIGIN, 'https://erp.starsnap.kr');
     assert.equal(runtimeConfig.vars.HUB_SERVER_LOG_SECRET, undefined);
     assert.equal(runtimeConfig.vars.EAT_API_SERVICE_KEY, undefined);
+    assert.equal(runtimeConfig.vars.NEIS_API_KEY, undefined);
     assert.equal(runtimeConfigText.includes(secret), false);
     assert.equal(runtimeConfigText.includes(eatSecret), false);
+    assert.equal(runtimeConfigText.includes(neisSecret), false);
     assert.equal(secretsText, [
       `HUB_SERVER_LOG_SECRET=${JSON.stringify(secret)}`,
       `EAT_API_SERVICE_KEY=${JSON.stringify(eatSecret)}`,
+      `NEIS_API_KEY=${JSON.stringify(neisSecret)}`,
       '',
     ].join('\n'));
     assert.deepEqual(JSON.parse(output), {
       service: 'starsnap-worker-config',
       publicBindings: 3,
-      secretBindings: 2,
+      secretBindings: 3,
     });
   } finally {
     await rm(directory, { recursive: true, force: true });

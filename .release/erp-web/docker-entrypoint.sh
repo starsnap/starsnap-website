@@ -57,6 +57,18 @@ if [ "${#EAT_API_SERVICE_KEY}" -lt 32 ]; then
   exit 1
 fi
 
+if [ -z "${NEIS_API_KEY:-}" ]; then
+  neis_api_key_file=${NEIS_API_KEY_FILE:-/run/starsnap-secrets/neis-api-key}
+  if [ -r "$neis_api_key_file" ]; then
+    NEIS_API_KEY=$(tr -d '\r\n' < "$neis_api_key_file")
+    export NEIS_API_KEY
+  fi
+fi
+if [ -n "${NEIS_API_KEY:-}" ] && [ "${#NEIS_API_KEY}" -lt 16 ]; then
+  echo "NEIS API key must contain at least 16 characters." >&2
+  exit 1
+fi
+
 worker_config_file=${STARSNAP_WORKER_CONFIG_FILE:-/app/dist/server/wrangler.runtime.json}
 case "$worker_config_file" in
   /*) ;;

@@ -50,6 +50,7 @@ const secretNames = [
   'ERP_EMBEDDING_WORKER_TOKEN',
   'HUB_SERVER_LOG_SECRET',
   'EAT_API_SERVICE_KEY',
+  'NEIS_API_KEY',
 ];
 
 const parsed = JSON.parse(readFileSync(source, 'utf8'));

@@ -13,6 +13,7 @@
     "test:hub-log": "node --test scripts/hub-server-log.test.mjs",
     "test:school-sync": "node --test scripts/sync-neis-schools.test.mjs",
     "test:eat-bid": "node --test scripts/eat-bid.test.mjs",
+    "test:neis-meals": "node --test scripts/neis-meals.test.mjs",
     "test:haccp-removal": "node --test scripts/haccp-removal.test.mjs",
     "test:module-search": "node --test scripts/module-search.test.mjs",
     "test:network-flow-removal": "node --test scripts/network-flow-removal.test.mjs",

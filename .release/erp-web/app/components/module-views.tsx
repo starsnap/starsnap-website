@@ -32,6 +32,7 @@ import type {
 } from '../lib/erp-types';
 import { moduleIdsForOrganization } from '../lib/organization-modules';
 import { ModuleLoadingSkeleton } from './loading-skeletons';
+import { NeisMealImportPanel } from './neis-meal-import-panel';
 import {
   ChannelOrdersView,
   NetworkDashboardSummary,
@@ -250,23 +251,33 @@ function Dashboard({ data, onNavigate }: Pick<ModuleViewProps, 'data' | 'onNavig
 function MealPlansView({ data, searchQuery, siteFilter, pendingAction, membershipRole, onAction }: ModuleViewProps) {
   const rows = matches(data.mealPlans, searchQuery, siteFilter);
   return (
-    <TablePanel title="식단 및 식수 계획" description="끼니별 식단, 식수, 알레르기와 승인 상태를 관리합니다." count={rows.length}>
-      <table className="erp-table min-w-[940px]">
-        <thead><tr><th>급식일</th><th>급식소</th><th>끼니</th><th>메뉴 구성</th><th className="text-right">예정 식수</th><th>알레르기</th><th>상태</th><th className="text-right">처리</th></tr></thead>
-        <tbody>
-          {rows.length === 0 ? <EmptyRow columns={8} hasSourceRows={data.mealPlans.length > 0} /> : rows.map((item) => (
-            <tr key={item.id}>
-              <td className="font-bold">{item.serviceDate}</td><td>{item.siteName}</td><td>{item.mealType}</td>
-              <td><span className="block max-w-[320px] truncate font-semibold">{item.menuName}</span></td>
-              <td className="text-right font-black">{number.format(item.plannedServings)}식</td><td>{item.allergens}</td><td><StatusBadge status={item.status} /></td>
-              <td className="text-right">{['작성중', '승인대기'].includes(item.status) && (membershipRole === 'viewer'
-                ? <span className="text-xs font-semibold text-[var(--ss-text-muted)]">조회 전용</span>
-                : <PrimaryAction disabled={pendingAction === item.id} onClick={() => onAction('meals', item.id, 'confirm')}>식단 확정</PrimaryAction>)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </TablePanel>
+    <div className="space-y-4">
+      {data.tenant.organizationType === 'BIDDER' && (
+        <NeisMealImportPanel
+          key={data.tenant.id}
+          tenant={data.tenant.code}
+          tenantId={data.tenant.id}
+          schoolBids={data.schoolBids}
+        />
+      )}
+      <TablePanel title="식단 및 식수 계획" description="끼니별 식단, 식수, 알레르기와 승인 상태를 관리합니다." count={rows.length}>
+        <table className="erp-table min-w-[940px]">
+          <thead><tr><th>급식일</th><th>급식소</th><th>끼니</th><th>메뉴 구성</th><th className="text-right">예정 식수</th><th>알레르기</th><th>상태</th><th className="text-right">처리</th></tr></thead>
+          <tbody>
+            {rows.length === 0 ? <EmptyRow columns={8} hasSourceRows={data.mealPlans.length > 0} /> : rows.map((item) => (
+              <tr key={item.id}>
+                <td className="font-bold">{item.serviceDate}</td><td>{item.siteName}</td><td>{item.mealType}</td>
+                <td><span className="block max-w-[320px] truncate font-semibold">{item.menuName}</span></td>
+                <td className="text-right font-black">{number.format(item.plannedServings)}식</td><td>{item.allergens}</td><td><StatusBadge status={item.status} /></td>
+                <td className="text-right">{['작성중', '승인대기'].includes(item.status) && (membershipRole === 'viewer'
+                  ? <span className="text-xs font-semibold text-[var(--ss-text-muted)]">조회 전용</span>
+                  : <PrimaryAction disabled={pendingAction === item.id} onClick={() => onAction('meals', item.id, 'confirm')}>식단 확정</PrimaryAction>)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TablePanel>
+    </div>
   );
 }
 

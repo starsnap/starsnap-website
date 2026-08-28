@@ -40,7 +40,7 @@ jobs:
           repository: starsnap/starsnap-log-web
           ref: ${{ inputs.web_ref }}
           path: log-web
-          token: ${{ secrets.HUB_RELEASE_GHCR_TOKEN }}
+          token: ${{ secrets.PLATFORM_GHCR_TOKEN }}
           persist-credentials: false
 
       - name: Check out Log server source
@@ -49,7 +49,7 @@ jobs:
           repository: starsnap/starsnap-log-server
           ref: ${{ inputs.server_ref }}
           path: log-server
-          token: ${{ secrets.HUB_RELEASE_GHCR_TOKEN }}
+          token: ${{ secrets.PLATFORM_GHCR_TOKEN }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -92,7 +92,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.HUB_RELEASE_GHCR_TOKEN }}
+          password: ${{ secrets.PLATFORM_GHCR_TOKEN }}
 
       - name: Build and publish Log web image
         id: web

@@ -227,6 +227,7 @@ services:
       EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key
       EAT_CACHE_TTL_MINUTES: "360"
       NEIS_API_KEY_FILE: /run/secrets/neis-api-key
+      NEIS_PROXY_URL: http://127.0.0.1:3001
       HUB_SERVER_LOG_TIMEOUT_MS: "750"
       HUB_SERVER_LOG_URL: http://starsnap-log-server:8081/api/server-logs
       PGPOOL_MAX: "1"
@@ -277,7 +278,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        - "Promise.all([fetch('http://127.0.0.1:3000/api/health').then(r=>r.ok),fetch('http://127.0.0.1:3001/health').then(r=>r.status===204)]).then(v=>process.exit(v.every(Boolean)?0:1)).catch(()=>process.exit(1))"
       interval: 15s
       timeout: 8s
       start_period: 90s

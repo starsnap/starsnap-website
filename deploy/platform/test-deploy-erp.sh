@@ -109,6 +109,9 @@ docker() {
             'EAT_CACHE_TTL_MINUTES=360'
           if [[ -n "$(read_state current-neis-secret)" ]]; then
             printf '%s\n' 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key'
+            if [[ -e "$(state neis-proxy-env-add)" ]]; then
+              printf '%s\n' 'NEIS_PROXY_URL=http://127.0.0.1:3001'
+            fi
           fi
           ;;
         *'.Spec.UpdateConfig.FailureAction'*|*'if .Spec.UpdateConfig'*)
@@ -144,6 +147,8 @@ docker() {
           --env-add)
             if [[ "$2" == 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' ]]; then
               write_state neis-env-add "$2"
+            elif [[ "$2" == 'NEIS_PROXY_URL=http://127.0.0.1:3001' ]]; then
+              write_state neis-proxy-env-add "$2"
             fi
             shift 2
             ;;
@@ -331,6 +336,7 @@ assert_secret_rotation_requested() {
 
 assert_neis_secret_add_requested() {
   test "$(read_state neis-env-add)" = 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key'
+  test "$(read_state neis-proxy-env-add)" = 'NEIS_PROXY_URL=http://127.0.0.1:3001'
   test "$(read_state neis-secret-add)" = 'source=erp-neis-api-key-v2,target=neis-api-key,uid=1000,gid=1000,mode=0400'
 }
 

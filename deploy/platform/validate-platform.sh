@@ -135,6 +135,8 @@ grep -Fq 'EAT_API_SERVICE_KEY_FILE: /run/secrets/eat-api-service-key' deploy/pla
 grep -Fq 'EAT_CACHE_TTL_MINUTES: "360"' deploy/platform/starsnap-erp.yml
 grep -Fq 'ERP_EAT_API_SECRET_NAME' deploy/platform/starsnap-erp.yml
 grep -Fq 'NEIS_API_KEY_FILE: /run/secrets/neis-api-key' deploy/platform/starsnap-erp.yml
+grep -Fq 'NEIS_PROXY_URL: http://127.0.0.1:3001' deploy/platform/starsnap-erp.yml
+grep -Fq "fetch('http://127.0.0.1:3001/health')" deploy/platform/starsnap-erp.yml
 grep -Fq 'ERP_NEIS_API_SECRET_NAME' deploy/platform/starsnap-erp.yml
 grep -Fq 'DEPLOY-ERP-192.168.1.103' deploy/platform/deploy-erp.sh
 

@@ -41,16 +41,10 @@ docker exec "$web_container" node -e '
     }
     if (eatSecret.length < 32) throw new Error("eAT secret file is invalid");
     if (neisSecret.length < 16) throw new Error("NEIS secret file is invalid");
-    const bindingLine = workerSecrets.split(/\r?\n/).find(line => line.startsWith("NEIS_API_KEY="));
-    if (!bindingLine) throw new Error("NEIS Worker binding is missing");
-    let boundNeisSecret;
-    try {
-      boundNeisSecret = JSON.parse(bindingLine.slice("NEIS_API_KEY=".length));
-    } catch {
-      throw new Error("NEIS Worker binding is malformed");
+    if (workerSecrets.split(/\r?\n/).some(line => line.startsWith("NEIS_API_KEY="))) {
+      throw new Error("NEIS secret must not be exposed to the Worker binding");
     }
-    if (boundNeisSecret !== neisSecret) throw new Error("NEIS Worker binding does not match mounted secret");
-    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true NeisSecretReadable=true NeisWorkerBinding=true`);
+    console.log(`ERP health verified: schemaVersion=${health.body.schemaVersion} EatSecretReadable=true NeisSecretReadable=true NeisWorkerIsolation=true`);
   }).catch((error) => {
     console.error(`ERP health verification failed: ${error.message}`);
     process.exit(1);

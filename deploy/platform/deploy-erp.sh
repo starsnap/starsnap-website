@@ -362,6 +362,7 @@ docker service update \
   --env-add 'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' \
   --env-add 'EAT_CACHE_TTL_MINUTES=360' \
   --env-add 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' \
+  --env-add 'NEIS_PROXY_URL=http://127.0.0.1:3001' \
   "${secret_update[@]}" \
   "${update_failure_args[@]}" \
   --force \
@@ -388,6 +389,7 @@ service_env="$(docker service inspect \
 test "$(grep -Fxc 'EAT_API_SERVICE_KEY_FILE=/run/secrets/eat-api-service-key' <<<"$service_env")" -eq 1
 test "$(grep -Fxc 'EAT_CACHE_TTL_MINUTES=360' <<<"$service_env")" -eq 1
 test "$(grep -Fxc 'NEIS_API_KEY_FILE=/run/secrets/neis-api-key' <<<"$service_env")" -eq 1
+test "$(grep -Fxc 'NEIS_PROXY_URL=http://127.0.0.1:3001' <<<"$service_env")" -eq 1
 
 web_container="$(single_running_container "$web_service")"
 test "$(docker inspect --format '{{.Image}}' "$web_container")" \

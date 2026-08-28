@@ -13,6 +13,8 @@
     "test:hub-log": "node --test scripts/hub-server-log.test.mjs",
     "test:school-sync": "node --test scripts/sync-neis-schools.test.mjs",
     "test:eat-bid": "node --test scripts/eat-bid.test.mjs",
+    "test:module-search": "node --test scripts/module-search.test.mjs",
+    "test:organization-modules": "node --test scripts/organization-modules.test.mjs",
     "test:worker-config": "node --test scripts/write-worker-config.test.mjs",
     "db:generate": "drizzle-kit generate",
     "db:backup:d1": "node scripts/backup-d1.mjs",

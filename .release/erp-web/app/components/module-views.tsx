@@ -32,6 +32,7 @@ import type {
   ProductPriceSnapshot,
   PriceMonth,
 } from '../lib/erp-types';
+import { moduleIdsForOrganization } from '../lib/organization-modules';
 import { ModuleLoadingSkeleton } from './loading-skeletons';
 import {
   ChannelOrdersView,
@@ -143,6 +144,7 @@ function EmptyRow({ columns, hasSourceRows }: { columns: number; hasSourceRows: 
 
 function Dashboard({ data, onNavigate }: Pick<ModuleViewProps, 'data' | 'onNavigate'>) {
   const { metrics } = data;
+  const availableModuleIds = moduleIdsForOrganization(data.tenant.organizationType);
   const metricCards = [
     { label: '조회 계획 식수', value: number.format(metrics.totalServings), unit: '식', detail: `${data.sites.length}개 운영 사업장 합계`, icon: Users, tone: 'navy' },
     { label: '승인 대기 발주', value: number.format(metrics.pendingOrders), unit: '건', detail: '납기 전 승인 필요', icon: ShoppingBag, tone: 'amber' },
@@ -154,7 +156,7 @@ function Dashboard({ data, onNavigate }: Pick<ModuleViewProps, 'data' | 'onNavig
     { label: '발주 승인', current: data.purchaseOrders.filter((item) => ['승인', '발주완료', '부분입고'].includes(item.status)).length, total: data.purchaseOrders.length, module: 'purchasing' as ModuleId },
     { label: '생산 완료', current: data.productionOrders.filter((item) => item.status === '완료').length, total: data.productionOrders.length, module: 'production' as ModuleId },
     { label: '배송 완료', current: metrics.completedDeliveries, total: metrics.totalDeliveries, module: 'delivery' as ModuleId },
-  ];
+  ].filter((item) => availableModuleIds.includes(item.module));
   const foodCostRates = data.settlements
     .filter((item) => item.salesAmount > 0)
     .map((item) => (item.ingredientCost / item.salesAmount) * 100);
@@ -186,7 +188,7 @@ function Dashboard({ data, onNavigate }: Pick<ModuleViewProps, 'data' | 'onNavig
             <div><p className="eyebrow">DAILY FLOW</p><h2>오늘의 운영 흐름</h2></div>
             <span className="flex items-center gap-1 text-xs font-bold text-[var(--color-muted-ink)]"><Clock3 size={14} /> 2분 전 갱신</span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {workflow.map((item, index) => {
               const percent = item.total ? Math.round((item.current / item.total) * 100) : 0;
               return (

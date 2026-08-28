@@ -15,7 +15,6 @@ import {
   Menu,
   PackageSearch,
   RotateCw,
-  Search,
   ShieldCheck,
   ShoppingCart,
   Split,
@@ -48,10 +47,12 @@ import type {
   PriceMonth,
   TenantCode,
 } from '../lib/erp-types';
+import { moduleIdsForOrganization } from '../lib/organization-modules';
 import { currentPriceMonth, isPriceMonth } from '../lib/price-month';
 import { ModuleView, type NoticeMessage } from './module-views';
 import { AccessibleModal, lockBodyScroll, unlockBodyScroll } from './accessible-modal';
 import { NoticeModal } from './notice-modal';
+import { ModuleSearchCombobox } from './module-search-combobox';
 import { WorkflowActionModal } from './workflow-action-modal';
 import { StarSnapBrandIcon } from './starsnap-brand-icon';
 
@@ -75,12 +76,6 @@ const moduleCatalog: Record<ModuleId, ModuleDefinition> = {
   delivery: { id: 'delivery', label: '배송 관리', shortLabel: '배송관리', icon: Truck },
   settlement: { id: 'settlement', label: '정산·원가 관리', shortLabel: '정산·원가', icon: Calculator },
   haccp: { id: 'haccp', label: '위생·HACCP', shortLabel: '위생·HACCP', icon: ShieldCheck },
-};
-
-const moduleIdsByOrganization: Record<OrganizationType, ModuleId[]> = {
-  BRAND: ['dashboard', 'partners', 'channel-orders', 'products', 'inventory', 'delivery', 'settlement'],
-  DEALER: ['dashboard', 'partners', 'bids', 'channel-orders', 'products', 'inventory', 'delivery', 'settlement'],
-  BIDDER: ['dashboard', 'bids', 'partners', 'channel-orders', 'products', 'meals', 'purchasing', 'inventory', 'production', 'delivery', 'settlement', 'haccp'],
 };
 
 const organizationLabel: Record<OrganizationType, string> = {
@@ -416,7 +411,6 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
   const [priceLoadError, setPriceLoadError] = useState<string | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleId>('dashboard');
   const [siteFilter, setSiteFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -514,7 +508,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
   }, [desktopNavigation, mobileMenuOpen]);
 
   const availableModules = useMemo(
-    () => moduleIdsByOrganization[data.tenant.organizationType].map((id) => moduleCatalog[id]),
+    () => moduleIdsForOrganization(data.tenant.organizationType).map((id) => moduleCatalog[id]),
     [data.tenant.organizationType],
   );
   const activeDefinition = useMemo(
@@ -525,7 +519,6 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
   const selectModule = (id: ModuleId) => {
     if (!availableModules.some((item) => item.id === id)) return;
     setActiveModule(id);
-    setSearchQuery('');
     setMobileMenuOpen(false);
   };
 
@@ -1408,13 +1401,14 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
             <p className="text-[11px] font-bold tracking-[0.12em] text-[var(--ss-text-muted)]">STARSNAP ERP</p>
             <p className="truncate text-sm font-semibold">{activeDefinition.label}</p>
           </div>
-          {activeModule !== 'products' ? (
-            <div className="relative ml-auto hidden w-full max-w-[320px] md:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ss-text-muted)]" size={17} />
-              <label className="sr-only" htmlFor="global-search">현재 화면 검색</label>
-              <input id="global-search" value={searchQuery} disabled={loading} onChange={(event) => setSearchQuery(event.target.value)} placeholder="현재 화면에서 검색" className="star-control w-full bg-[var(--ss-surface-subtle)] pl-10 pr-3 text-sm" />
-            </div>
-          ) : <span className="ml-auto" />}
+          <div className="ml-auto hidden w-full max-w-[360px] md:block">
+            <ModuleSearchCombobox
+              modules={availableModules}
+              activeModule={activeModule}
+              disabled={loading}
+              onSelect={selectModule}
+            />
+          </div>
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
@@ -1514,7 +1508,7 @@ export function ErpShell({ session, onSessionExpired }: ErpShellProps) {
               priceLoadError={priceLoadError}
               loading={loading}
               pendingAction={pendingAction}
-              searchQuery={searchQuery}
+              searchQuery=""
               siteFilter={siteFilter}
               membershipRole={membership.role}
               onAction={requestAction}

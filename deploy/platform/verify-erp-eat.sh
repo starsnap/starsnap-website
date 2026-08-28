@@ -102,7 +102,7 @@ docker exec "$web_container" node -e '
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         response = await fetch(url, {
-          headers: { accept: "application/json" },
+          headers: { accept: "application/json", "accept-encoding": "identity" },
           redirect: "manual",
           referrerPolicy: "no-referrer",
           signal: AbortSignal.timeout(10_000),

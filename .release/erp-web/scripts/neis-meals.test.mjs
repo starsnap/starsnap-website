@@ -153,6 +153,7 @@ test('uses the loopback curl proxy without sending the NEIS key through Workerd'
       assert.equal(url.searchParams.has('KEY'), false);
       assert.equal(init?.method, 'POST');
       assert.equal(init?.headers?.['Content-Type'], 'application/json');
+      assert.equal(init?.redirect, 'manual');
       assert.deepEqual(JSON.parse(String(init?.body)), query);
       assert.equal(String(init?.body).includes('KEY'), false);
       return Response.json(successPayload);
@@ -181,6 +182,7 @@ test('validates curl proxy input and builds a shell-free HTTPS-only argument lis
     '--disable', '--silent', '--show-error', '--fail-with-body', '--proto', '=https', '--connect-timeout',
   ]);
   assert.equal(args.includes('--location'), false);
+  assert.equal(args.includes('%{stderr}NEIS_HTTP_STATUS:%{http_code}\n'), true);
   assert.equal(args.includes('https://open.neis.go.kr/hub/mealServiceDietInfo'), true);
   assert.equal(args.includes('KEY@-'), true);
   assert.equal(args.some(value => value.includes('test-only-key')), false);
@@ -195,6 +197,8 @@ test('packages and supervises the loopback proxy in the production runtime', asy
     'utf8',
   );
   assert.match(entrypoint, /node \/usr\/local\/lib\/starsnap-erp\/neis-curl-proxy\.mjs &/);
+  assert.match(entrypoint, /unset NEIS_API_KEY/);
+  assert.match(entrypoint, /wrangler "\$@" &/);
   assert.match(entrypoint, /wait -n "\$wrangler_pid" "\$neis_proxy_pid"/);
   assert.match(entrypoint, /shutdown_runtime/);
   assert.match(dockerfile, /apt-get install --yes --no-install-recommends bash ca-certificates curl/);

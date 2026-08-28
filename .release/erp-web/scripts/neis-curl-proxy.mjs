@@ -79,6 +79,7 @@ export function buildCurlArgs(query) {
     '--connect-timeout', '3',
     '--max-time', '8',
     '--max-redirs', '0',
+    '--write-out', '%{stderr}NEIS_HTTP_STATUS:%{http_code}\n',
     '--get', endpoint,
     '--data-urlencode', 'KEY@-',
     '--data-urlencode', 'Type=json',
@@ -102,8 +103,7 @@ function runCurl(args, key, signal) {
       windowsHide: true,
     });
     const stdout = [];
-    const stderr = [];
-    let errorBytes = 0;
+    let stderrTail = Buffer.alloc(0);
     let outputBytes = 0;
     let settled = false;
     const timeout = setTimeout(() => child.kill('SIGKILL'), 10_000);
@@ -125,8 +125,7 @@ function runCurl(args, key, signal) {
       stdout.push(chunk);
     });
     child.stderr.on('data', chunk => {
-      if (errorBytes < 8_192) stderr.push(chunk);
-      errorBytes += chunk.length;
+      stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-8_192);
     });
     child.once('close', (code, terminationSignal) => {
       if (code === 0) {
@@ -136,6 +135,8 @@ function runCurl(args, key, signal) {
       const error = new Error('curl request failed.');
       error.code = code ?? 'UNKNOWN';
       error.killed = Boolean(terminationSignal);
+      const status = /NEIS_HTTP_STATUS:(\d{3})/.exec(stderrTail.toString('utf8'))?.[1];
+      error.httpStatus = status ?? null;
       finish(error);
     });
     child.stdin.on('error', () => undefined);
@@ -155,6 +156,7 @@ async function fetchMeals(query, key, signal) {
 
 export function startProxy() {
   const key = configuredKey();
+  delete process.env.NEIS_API_KEY;
   if (!Number.isSafeInteger(listenPort) || listenPort < 1 || listenPort > 65_535) {
     throw new Error('NEIS_CURL_PROXY_PORT is invalid.');
   }
@@ -200,6 +202,9 @@ export function startProxy() {
       );
       console.error('NEIS curl proxy request failed', {
         code: error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNKNOWN',
+        httpStatus: error && typeof error === 'object' && 'httpStatus' in error
+          ? error.httpStatus
+          : null,
         timeout,
       });
       sendJson(response, timeout ? 504 : 502, { message: 'NEIS upstream request failed.' });

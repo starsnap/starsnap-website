@@ -236,7 +236,7 @@ export async function fetchNeisMeals(
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(query),
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
     } : {
       headers: { Accept: 'application/json', 'Accept-Encoding': 'identity' },

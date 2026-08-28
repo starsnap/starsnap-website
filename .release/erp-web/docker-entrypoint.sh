@@ -117,6 +117,10 @@ export STARSNAP_WORKER_CONFIG_FILE="$worker_config_file"
 export STARSNAP_WORKER_SECRETS_FILE=${STARSNAP_WORKER_SECRETS_FILE:-/app/dist/server/.dev.vars}
 node /usr/local/lib/starsnap-erp/write-worker-config.mjs
 
+# The proxy inherited the key at spawn time. Keep it out of the Worker launcher
+# and the Workerd bindings after the runtime configuration has been written.
+unset NEIS_API_KEY
+
 set -- \
   dev \
   --config "$worker_config_file" \

@@ -3,6 +3,15 @@ import https from "node:https";
 
 const requestTimeoutMs = 10_000;
 const redirectUri = "/__starsnap_internal_verify__/path?source=swarm&value=1";
+const securityProbeCases = [
+  ["starsnap.kr", "/.env"],
+  ["api.starsnap.kr", "/nested/.ENV.local"],
+  ["erp.starsnap.kr", "/%2Eenv"],
+  ["sns.starsnap.kr", "/nested/.git/config"],
+  ["chat.starsnap.kr", "/.git%2Fconfig"],
+  ["admin.starsnap.kr", "/WP-LOGIN.PHP"],
+  ["log.starsnap.kr", "/nested/PHPMyAdmin/"],
+];
 
 function request(client, options) {
   return new Promise((resolve, reject) => {
@@ -294,6 +303,21 @@ async function main() {
     404,
     "Log Hub public server-log ingestion",
   );
+
+  for (const [host, path] of securityProbeCases) {
+    const securityProbeResponse = await caddyHttps(host, path);
+    expectStatus(
+      securityProbeResponse,
+      404,
+      `security probe guard ${host}${path}`,
+    );
+    expectHeader(
+      securityProbeResponse,
+      "x-starsnap-edge-guard",
+      "scanner-probe",
+      `security probe guard ${host}${path}`,
+    );
+  }
 
   console.log("Internal route verification passed.");
 }

@@ -375,6 +375,13 @@ test ! -e "$FAKE_SWARM_STATE/caddy-image"
 grep -Fq "reverse_proxy starsnap-main_api:8080" deploy/Caddyfile
 grep -Fq "reverse_proxy starsnap-erp_web:3000" deploy/Caddyfile
 grep -Fq "reverse_proxy starsnap-sns_web:3000" deploy/Caddyfile
+grep -Fq "(security_probe_guard)" deploy/Caddyfile
+grep -Fq "path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*" deploy/Caddyfile
+grep -Fq 'header X-StarSnap-Edge-Guard "scanner-probe"' deploy/Caddyfile
+test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "7"
+grep -Fq 'const securityProbeCases = [' deploy/verify-internal.mjs
+grep -Fq '`security probe guard ${host}${path}`' deploy/verify-internal.mjs
+grep -Fq '"x-starsnap-edge-guard"' deploy/verify-internal.mjs
 grep -Fq "chat.starsnap.kr {" deploy/Caddyfile
 chat_caddy_block="$(sed -n '/^chat\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
 grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$chat_caddy_block"

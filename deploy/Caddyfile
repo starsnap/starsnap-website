@@ -2,18 +2,38 @@
 	admin 127.0.0.1:2019
 }
 
+(security_probe_guard) {
+	@security_probe {
+		path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*
+	}
+
+	handle @security_probe {
+		header X-StarSnap-Edge-Guard "scanner-probe"
+		respond 404
+	}
+}
+
 starsnap.kr {
 	encode zstd gzip
-	reverse_proxy website:3000
+	import security_probe_guard
+
+	handle {
+		reverse_proxy website:3000
+	}
 }
 
 api.starsnap.kr {
 	encode zstd gzip
-	reverse_proxy starsnap-main_api:8080
+	import security_probe_guard
+
+	handle {
+		reverse_proxy starsnap-main_api:8080
+	}
 }
 
 erp.starsnap.kr {
 	encode zstd gzip
+	import security_probe_guard
 	header {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Content-Type-Options "nosniff"
@@ -31,11 +51,16 @@ erp.starsnap.kr {
 
 sns.starsnap.kr {
 	encode zstd gzip
-	reverse_proxy starsnap-sns_web:3000
+	import security_probe_guard
+
+	handle {
+		reverse_proxy starsnap-sns_web:3000
+	}
 }
 
 chat.starsnap.kr {
 	encode zstd gzip
+	import security_probe_guard
 	header {
 		Content-Security-Policy "frame-ancestors 'none'"
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -43,11 +68,14 @@ chat.starsnap.kr {
 		X-Frame-Options "DENY"
 		X-StarSnap-App-Surface "chat"
 	}
-	reverse_proxy starsnap-sns_web:3000
+	handle {
+		reverse_proxy starsnap-sns_web:3000
+	}
 }
 
 admin.starsnap.kr {
 	encode zstd gzip
+	import security_probe_guard
 	header {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Content-Type-Options "nosniff"
@@ -65,6 +93,7 @@ admin.starsnap.kr {
 
 log.starsnap.kr {
 	encode zstd gzip
+	import security_probe_guard
 	header {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Content-Type-Options "nosniff"

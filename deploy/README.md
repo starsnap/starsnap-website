@@ -108,6 +108,15 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
 
 `Caddyfile` provides these routes:
 
+- Every origin site block imports one shared security-probe guard. Requests for
+  `.env` variants, `.git` metadata, WordPress login probes, and phpMyAdmin paths
+  return an empty HTTP 404 before any website or API upstream is selected. Path
+  matching is case-insensitive and operates on Caddy's normalized decoded path,
+  so nested and encoded variants are covered without blocking ordinary SPA,
+  API, WebSocket, asset, or `/.well-known/*` routes. The guard adds
+  `X-StarSnap-Edge-Guard: scanner-probe`; deployment verification requires this
+  marker so an unrelated upstream 404 cannot produce a false pass.
+
 - `http://starsnap.kr/*` is upgraded automatically to HTTPS by Caddy.
 - `https://starsnap.kr/*` is reverse-proxied to `website:3000` on the stack
   overlay network.
@@ -172,6 +181,10 @@ Finally, it verifies the Admin HTTP redirect, HTTPS `StarSnap Admin` page marker
 and public `/api/health` 200 response with `{"status":"ok"}` through Caddy,
 plus the Log Hub dashboard marker, Access gate, service health, and blocked
 public ingestion route.
+It then checks representative canonical, nested, mixed-case, and URL-encoded
+security probes across all seven origin hostnames and requires the guard's HTTP
+404 plus `X-StarSnap-Edge-Guard: scanner-probe` marker before the deployment can
+converge.
 HTTPS requests set each public hostname as TLS SNI and
 retain normal CA and hostname verification; no insecure TLS mode is used.
 

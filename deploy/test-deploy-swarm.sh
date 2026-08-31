@@ -469,7 +469,7 @@ grep -Fq "inputs.caddy_only && 'caddy-only-current-image'" .github/workflows/con
 grep -Fq 'release-scope:' .github/workflows/container.yml
 grep -Fq 'publish_website=false' .github/workflows/container.yml
 grep -Fq "needs.release-scope.outputs.publish_website == 'true'" .github/workflows/container.yml
-grep -Fq 'git diff --name-only --no-renames "$BEFORE_SHA" "$AFTER_SHA"' .github/workflows/container.yml
+grep -Fq "git diff --name-only --no-renames \"\$BEFORE_SHA\" \"\$AFTER_SHA\"" .github/workflows/container.yml
 grep -Fq "^((app|public)/|Dockerfile" .github/workflows/container.yml
 grep -Fq 'validate-dispatch:' .github/workflows/container.yml
 grep -Fq 'caddy_only requires deploy=true and verify_only=false.' .github/workflows/container.yml

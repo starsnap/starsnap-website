@@ -45,6 +45,7 @@ reset_state() {
   find "$FAKE_SWARM_STATE/configs" -type f -delete
   rm -f -- "$FAKE_SWARM_STATE/rollback-requested"
   rm -f -- "$FAKE_SWARM_STATE/caddy-rollback-requested"
+  rm -f -- "$FAKE_SWARM_STATE/caddy-only-update"
   rm -f -- "$FAKE_SWARM_STATE/stack-remove-requested"
   rm -f -- "$FAKE_SWARM_STATE/pulled-image"
   export FAKE_FAIL_CANDIDATE=false
@@ -232,6 +233,26 @@ docker() {
         touch "$FAKE_SWARM_STATE/caddy-rollback-requested"
       fi
       ;;
+    "service update")
+      target="${!#}"
+      if [[ "$target" != "starsnap-company_caddy" \
+        || ! -f "$FAKE_SWARM_STATE/caddy-image" ]]; then
+        return 1
+      fi
+      next_config=""
+      for argument in "$@"; do
+        if [[ "$argument" == source=*,target=/etc/caddy/Caddyfile,mode=0444 ]]; then
+          next_config="${argument#source=}"
+          next_config="${next_config%%,*}"
+        fi
+      done
+      [[ -n "$next_config" ]]
+      printf '%s' "$FAKE_CADDY_SERVICE_IMAGE" >"$FAKE_SWARM_STATE/caddy-image"
+      printf '%s' "$next_config" >"$FAKE_SWARM_STATE/caddy-config"
+      printf '%s' "completed" >"$FAKE_SWARM_STATE/caddy-update-state"
+      printf '%s' '{"Name":"starsnap-company_caddy","Labels":{"spec":"candidate"}}' >"$FAKE_SWARM_STATE/caddy-spec"
+      touch "$FAKE_SWARM_STATE/caddy-only-update"
+      ;;
     "service rm")
       target="$3"
       if [[ "$target" == "starsnap-company_website" ]]; then
@@ -350,6 +371,17 @@ run_deploy() {
     bash deploy/deploy-swarm.sh
 }
 
+run_caddy_only() {
+  STACK_NAME="starsnap-company" \
+  SERVICE_NAME="starsnap-company_website" \
+  STARSNAP_ROLLOUT_TIMEOUT_SECONDS=30 \
+  STARSNAP_ROLLBACK_TIMEOUT_SECONDS=30 \
+  STARSNAP_CLEANUP_TIMEOUT_SECONDS=30 \
+  STARSNAP_WEBSITE_IMAGE="$previous_image" \
+  CADDY_ONLY=true \
+    bash deploy/deploy-swarm.sh
+}
+
 reset_state
 success_output="$(run_deploy 2>&1)"
 grep -Fq "Deployment verified: $candidate_image" <<<"$success_output"
@@ -359,6 +391,17 @@ test -e "$FAKE_SWARM_STATE/caddy-image"
 test -e "$FAKE_SWARM_STATE/caddy-config"
 test "$(cat "$FAKE_SWARM_STATE/caddy-image")" = "$caddy_service_image"
 test "$caddy_service_image" != "$caddy_image"
+
+reset_state
+seed_previous_caddy
+printf '%s' "starsnap-company_caddyfile_previous" >"$FAKE_SWARM_STATE/caddy-config"
+printf '%s' "starsnap-company_caddyfile_previous" >"$FAKE_SWARM_STATE/previous-caddy-config"
+caddy_only_output="$(run_caddy_only 2>&1)"
+grep -Fq "Website unchanged: $previous_image" <<<"$caddy_only_output"
+grep -Fq "Caddy-only deployment verified: $caddy_image" <<<"$caddy_only_output"
+test -e "$FAKE_SWARM_STATE/caddy-only-update"
+test "$(cat "$FAKE_SWARM_STATE/current-image")" = "$previous_image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 
 reset_state
 export FAKE_CADDY_SERVICE_IMAGE="registry.invalid/library/$caddy_service_image"
@@ -378,7 +421,7 @@ grep -Fq "reverse_proxy starsnap-sns_web:3000" deploy/Caddyfile
 grep -Fq "(security_probe_guard)" deploy/Caddyfile
 grep -Fq "path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*" deploy/Caddyfile
 grep -Fq 'header X-StarSnap-Edge-Guard "scanner-probe"' deploy/Caddyfile
-test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "7"
+test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "8"
 grep -Fq 'const securityProbeCases = [' deploy/verify-internal.mjs
 grep -Fq 'security probe guard' deploy/verify-internal.mjs
 grep -Fq '"x-starsnap-edge-guard"' deploy/verify-internal.mjs
@@ -389,6 +432,13 @@ grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$chat_cadd
 grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$chat_caddy_block"
 grep -Fq 'X-Frame-Options "DENY"' <<<"$chat_caddy_block"
 grep -Fq 'X-StarSnap-App-Surface "chat"' <<<"$chat_caddy_block"
+grep -Fq "bible.starsnap.kr {" deploy/Caddyfile
+bible_caddy_block="$(sed -n '/^bible\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
+grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$bible_caddy_block"
+grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$bible_caddy_block"
+grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$bible_caddy_block"
+grep -Fq 'X-Frame-Options "DENY"' <<<"$bible_caddy_block"
+grep -Fq 'X-StarSnap-App-Surface "bible"' <<<"$bible_caddy_block"
 grep -Fq "admin.starsnap.kr {" deploy/Caddyfile
 grep -Fq "@admin_api path /api/*" deploy/Caddyfile
 grep -Fq "reverse_proxy starsnap-admin_server:8082" deploy/Caddyfile
@@ -402,6 +452,29 @@ grep -Fq 'caddyHttp("chat.starsnap.kr", "/api/health")' deploy/verify-internal.m
 grep -Fq 'caddyHttps("chat.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("chat.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'expectHeader(chatRoot, "x-starsnap-app-surface", "chat"' deploy/verify-internal.mjs
+grep -Fq 'caddyHttp("bible.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("bible.starsnap.kr", "/")' deploy/verify-internal.mjs
+grep -Fq 'caddyHttps("bible.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' deploy/verify-internal.mjs
+grep -Fq 'expectHeader(bibleRoot, "x-starsnap-app-surface", "bible"' deploy/verify-internal.mjs
+grep -Fq 'CADDY_ONLY must be true or false' deploy/deploy-swarm.sh
+grep -Fq 'Caddy-only deployment verified' deploy/deploy-swarm.sh
+grep -Fq 'caddy_only:' .github/workflows/container.yml
+grep -Fq 'Pin the current website specification for a Caddy-only release' .github/workflows/container.yml
+grep -Fq 'Verify a Caddy-only release did not update the website service' .github/workflows/container.yml
+test "$(grep -Fc "github.event_name != 'workflow_dispatch' || !inputs.caddy_only" .github/workflows/container.yml)" = "2"
+grep -Fq "needs.quality.result == 'success'" .github/workflows/container.yml
+grep -Fq 'inputs.caddy_only ||' .github/workflows/container.yml
+grep -Fq "inputs.caddy_only && 'caddy-only-current-image'" .github/workflows/container.yml
+grep -Fq 'release-scope:' .github/workflows/container.yml
+grep -Fq 'publish_website=false' .github/workflows/container.yml
+grep -Fq "needs.release-scope.outputs.publish_website == 'true'" .github/workflows/container.yml
+grep -Fq 'git diff --name-only --no-renames "$BEFORE_SHA" "$AFTER_SHA"' .github/workflows/container.yml
+grep -Fq "^((app|public)/|Dockerfile" .github/workflows/container.yml
+grep -Fq 'validate-dispatch:' .github/workflows/container.yml
+grep -Fq 'caddy_only requires deploy=true and verify_only=false.' .github/workflows/container.yml
+grep -Fq 'verify_only cannot be combined with deploy=true.' .github/workflows/container.yml
+grep -Fq "needs.validate-dispatch.result == 'success'" .github/workflows/container.yml
 grep -Fq 'caddyHttp("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("admin.starsnap.kr", "/api/health")' deploy/verify-internal.mjs

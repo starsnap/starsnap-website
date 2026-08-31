@@ -17,6 +17,7 @@ readonly cleanup_timeout_seconds="${STARSNAP_CLEANUP_TIMEOUT_SECONDS:-60}"
 : "${SERVICE_NAME:=${STACK_NAME}_website}"
 : "${INTERNAL_VERIFIER_SERVICE_NAME:=starsnap-erp_web}"
 : "${STARSNAP_WEBSITE_IMAGE:?STARSNAP_WEBSITE_IMAGE is required}"
+: "${CADDY_ONLY:=false}"
 
 readonly caddy_service_name="${STACK_NAME}_caddy"
 
@@ -57,6 +58,11 @@ fi
 
 if [[ "$SERVICE_NAME" != "${STACK_NAME}_website" ]]; then
   echo "Unexpected service name." >&2
+  exit 1
+fi
+
+if [[ "$CADDY_ONLY" != "true" && "$CADDY_ONLY" != "false" ]]; then
+  echo "CADDY_ONLY must be true or false." >&2
   exit 1
 fi
 
@@ -672,6 +678,34 @@ fi
 if [[ "$(grep -Fc "node.labels.starsnap.actions-runner == true" "$rendered_stack")" -lt 2 ]]; then
   echo "Rendered stack must pin both services to the labeled runner manager." >&2
   exit 1
+fi
+
+if [[ "$CADDY_ONLY" == "true" ]]; then
+  if [[ "$previous_stack_exists" != "true" \
+    || "$previous_service_exists" != "true" \
+    || "$previous_caddy_service_exists" != "true" ]]; then
+    echo "A Caddy-only release requires the existing company stack and both services." >&2
+    exit 1
+  fi
+  if [[ "$previous_image" != "$STARSNAP_WEBSITE_IMAGE" ]]; then
+    echo "A Caddy-only release must pin the currently running website image." >&2
+    exit 1
+  fi
+
+  wait_for_website "$previous_image" "$rollout_timeout_seconds" deploy
+  deployment_started=true
+  if [[ "$previous_caddy_config" != "$CADDY_CONFIG_NAME" ]]; then
+    docker service update \
+      --detach=true \
+      --image "$caddy_image" \
+      --config-rm "$previous_caddy_config" \
+      --config-add "source=$CADDY_CONFIG_NAME,target=/etc/caddy/Caddyfile,mode=0444" \
+      "$caddy_service_name"
+  fi
+  wait_for_caddy "$caddy_image" "$CADDY_CONFIG_NAME" "$rollout_timeout_seconds" deploy
+  echo "Website unchanged: $previous_image"
+  echo "Caddy-only deployment verified: $caddy_image ($CADDY_CONFIG_NAME)"
+  exit 0
 fi
 
 deployment_started=true

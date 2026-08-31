@@ -80,6 +80,9 @@ curl() {
     'http://chat.starsnap.kr/api/health')
       printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://chat.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
       ;;
+    'http://bible.starsnap.kr/api/health')
+      printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://bible.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
+      ;;
     'http://admin.starsnap.kr/api/health')
       printf 'HTTP/1.1 308 Permanent Redirect\r\nLocation: https://admin.starsnap.kr/api/health\r\n\r\n' >"$dump_header"
       ;;
@@ -131,7 +134,7 @@ curl() {
       if [[ "$FAKE_EXTERNAL_MODE" == "bad_chat_marker" ]]; then
         printf '%s' '<html><title>Unexpected app</title></html>' >"$output"
       else
-        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat" /></html>' >"$output"
+        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat bible" /></html>' >"$output"
       fi
       ;;
     'https://chat.starsnap.kr/api/health')
@@ -140,6 +143,26 @@ curl() {
         printf '%s' '{"status": "degraded"}' >"$output"
       elif [[ "$FAKE_EXTERNAL_MODE" == "malformed_chat_health" ]]; then
         printf '%s' 'garbage "status":"ok"' >"$output"
+      else
+        printf '%s' '{"status": "ok"}' >"$output"
+      fi
+      ;;
+    'https://bible.starsnap.kr/')
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_bible_surface" ]]; then
+        printf 'HTTP/2 200 OK\r\nX-StarSnap-App-Surface: social\r\n\r\n' >"$dump_header"
+      else
+        printf 'HTTP/2 200 OK\r\nX-StarSnap-App-Surface: bible\r\n\r\n' >"$dump_header"
+      fi
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_bible_marker" ]]; then
+        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat" /></html>' >"$output"
+      else
+        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat bible" /></html>' >"$output"
+      fi
+      ;;
+    'https://bible.starsnap.kr/api/health')
+      printf 'HTTP/2 200 OK\r\n\r\n' >"$dump_header"
+      if [[ "$FAKE_EXTERNAL_MODE" == "bad_bible_health" ]]; then
+        printf '%s' '{"status": "degraded"}' >"$output"
       else
         printf '%s' '{"status": "ok"}' >"$output"
       fi
@@ -206,12 +229,15 @@ grep -Fxq 'https://sns.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'http://chat.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://chat.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://chat.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'http://bible.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://bible.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
+grep -Fxq 'https://bible.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'http://admin.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://admin.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://admin.starsnap.kr/api/health' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'http://log.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
 grep -Fxq 'https://log.starsnap.kr/' "$FAKE_EXTERNAL_CALL_LOG"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "22"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "25"
 test ! -s "$FAKE_EXTERNAL_SLEEP_LOG"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -226,7 +252,7 @@ if bad_log_access_gate_output="$(
   exit 1
 fi
 grep -Fq "Unexpected Log Hub Access gate" <<<"$bad_log_access_gate_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "44"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "50"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -241,7 +267,7 @@ if exposed_erp_health_output="$(
   exit 1
 fi
 grep -Fq "Public ERP detailed health endpoint was not hidden" <<<"$exposed_erp_health_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "26"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "28"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -256,7 +282,7 @@ if exposed_erp_health_slash_output="$(
   exit 1
 fi
 grep -Fq "Public ERP trailing-slash health endpoint was not hidden" <<<"$exposed_erp_health_slash_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "28"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "30"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -271,7 +297,7 @@ if bad_chat_marker_output="$(
   exit 1
 fi
 grep -Fq "Public Chat root response did not contain the Chat surface capability marker" <<<"$bad_chat_marker_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "34"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "36"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -286,7 +312,7 @@ if bad_chat_surface_output="$(
   exit 1
 fi
 grep -Fq "Public Chat root response did not identify the Chat surface" <<<"$bad_chat_surface_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "34"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "36"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -301,7 +327,7 @@ if bad_chat_health_output="$(
   exit 1
 fi
 grep -Fq "Public Chat API health response was not ok" <<<"$bad_chat_health_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "36"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "38"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -316,7 +342,52 @@ if malformed_chat_health_output="$(
   exit 1
 fi
 grep -Fq "Public Chat API health response was not ok" <<<"$malformed_chat_health_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "36"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "38"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_bible_marker
+if bad_bible_marker_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected a missing Bible capability marker to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Bible root response did not contain the Bible surface capability marker" <<<"$bad_bible_marker_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "40"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_bible_surface
+if bad_bible_surface_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected an incorrect Bible surface header to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Bible root response did not identify the Bible surface" <<<"$bad_bible_surface_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "40"
+test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
+
+: >"$FAKE_EXTERNAL_CALL_LOG"
+: >"$FAKE_EXTERNAL_SLEEP_LOG"
+export FAKE_EXTERNAL_MODE=bad_bible_health
+if bad_bible_health_output="$(
+  STARSNAP_EXTERNAL_VERIFY_ATTEMPTS=2 \
+  STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
+    bash deploy/verify-external.sh 2>&1
+)"; then
+  echo "Expected a non-ok Bible health response to exhaust retries." >&2
+  exit 1
+fi
+grep -Fq "Public Bible API health response was not ok" <<<"$bad_bible_health_output"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "42"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -331,7 +402,7 @@ if bad_admin_marker_output="$(
   exit 1
 fi
 grep -Fq "Public Admin root response did not contain the StarSnap Admin marker" <<<"$bad_admin_marker_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "38"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "44"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -346,7 +417,7 @@ if bad_admin_health_status_output="$(
   exit 1
 fi
 grep -Fq "Public Admin API health returned HTTP 503" <<<"$bad_admin_health_status_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "40"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "46"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"
@@ -361,7 +432,7 @@ if bad_admin_health_output="$(
   exit 1
 fi
 grep -Fq "Public Admin API health response was not ok" <<<"$bad_admin_health_output"
-test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "40"
+test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "46"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 
 : >"$FAKE_EXTERNAL_CALL_LOG"

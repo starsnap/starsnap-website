@@ -14,6 +14,8 @@ readonly sns_http_url="http://sns.starsnap.kr"
 readonly sns_https_url="https://sns.starsnap.kr"
 readonly chat_http_url="http://chat.starsnap.kr"
 readonly chat_https_url="https://chat.starsnap.kr"
+readonly bible_http_url="http://bible.starsnap.kr"
+readonly bible_https_url="https://bible.starsnap.kr"
 readonly admin_http_url="http://admin.starsnap.kr"
 readonly admin_https_url="https://admin.starsnap.kr"
 readonly log_http_url="http://log.starsnap.kr"
@@ -42,6 +44,8 @@ readonly sns_index_file="$temp_dir/sns-index.html"
 readonly sns_health_file="$temp_dir/sns-health.json"
 readonly chat_index_file="$temp_dir/chat-index.html"
 readonly chat_health_file="$temp_dir/chat-health.json"
+readonly bible_index_file="$temp_dir/bible-index.html"
+readonly bible_health_file="$temp_dir/bible-health.json"
 readonly admin_index_file="$temp_dir/admin-index.html"
 readonly admin_health_file="$temp_dir/admin-health.json"
 
@@ -195,6 +199,10 @@ verify_once() {
     "308" \
     "${chat_https_url}/api/health" || return 1
   verify_redirect \
+    "${bible_http_url}/api/health" \
+    "308" \
+    "${bible_https_url}/api/health" || return 1
+  verify_redirect \
     "${admin_http_url}/api/health" \
     "308" \
     "${admin_https_url}/api/health" || return 1
@@ -272,7 +280,7 @@ verify_once() {
     echo "Public Chat root request failed." >&2
     return 1
   fi
-  if ! grep -Fq 'name="starsnap-app-surfaces" content="social chat"' "$chat_index_file"; then
+  if ! grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' "$chat_index_file"; then
     echo "Public Chat root response did not contain the Chat surface capability marker." >&2
     return 1
   fi
@@ -287,6 +295,30 @@ verify_once() {
     "${chat_https_url}/api/health" \
     "$chat_health_file" \
     "Public Chat API health" || return 1
+
+  if ! curl "${curl_common[@]}" \
+    --fail \
+    --dump-header "$headers_file" \
+    --output "$bible_index_file" \
+    "${bible_https_url}/"; then
+    echo "Public Bible root request failed." >&2
+    return 1
+  fi
+  if ! grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' "$bible_index_file"; then
+    echo "Public Bible root response did not contain the Bible surface capability marker." >&2
+    return 1
+  fi
+  local bible_surface=""
+  bible_surface="$(awk 'tolower($1) == "x-starsnap-app-surface:" { $1=""; sub(/^[[:space:]]+/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$headers_file")"
+  if [[ "$bible_surface" != "bible" ]]; then
+    echo "Public Bible root response did not identify the Bible surface." >&2
+    return 1
+  fi
+
+  verify_ok_json \
+    "${bible_https_url}/api/health" \
+    "$bible_health_file" \
+    "Public Bible API health" || return 1
 
   if ! curl "${curl_common[@]}" --fail --output "$admin_index_file" "${admin_https_url}/"; then
     echo "Public Admin root request failed." >&2
@@ -313,7 +345,7 @@ attempt=1
 while (( attempt <= attempts )); do
   echo "External verification attempt $attempt/$attempts"
   if verify_once; then
-    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, chat.starsnap.kr, admin.starsnap.kr, and log.starsnap.kr."
+    echo "External verification passed for starsnap.kr, www.starsnap.kr, api.starsnap.kr, erp.starsnap.kr, sns.starsnap.kr, chat.starsnap.kr, bible.starsnap.kr, admin.starsnap.kr, and log.starsnap.kr."
     exit 0
   fi
 

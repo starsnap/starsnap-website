@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      caddy_only:
+        description: Keep the current website service specification and deploy only Caddy configuration
+        required: false
+        default: false
+        type: boolean
       verify_only:
         description: Run only public DNS, TLS, redirect, site, and API verification
         required: false
@@ -43,8 +48,78 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate manual release mode
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          DEPLOY: ${{ inputs.deploy }}
+          CADDY_ONLY: ${{ inputs.caddy_only }}
+          VERIFY_ONLY: ${{ inputs.verify_only }}
+        run: |
+          set -euo pipefail
+          if [ "$CADDY_ONLY" = "true" ] && { [ "$DEPLOY" != "true" ] || [ "$VERIFY_ONLY" = "true" ]; }; then
+            echo "caddy_only requires deploy=true and verify_only=false." >&2
+            exit 1
+          fi
+          if [ "$VERIFY_ONLY" = "true" ] && [ "$DEPLOY" = "true" ]; then
+            echo "verify_only cannot be combined with deploy=true." >&2
+            exit 1
+          fi
+
+  release-scope:
+    needs: validate-dispatch
+    if: ${{ needs.validate-dispatch.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish_website: ${{ steps.manual.outputs.publish_website || steps.push.outputs.publish_website }}
+    steps:
+      - name: Resolve manual release scope
+        id: manual
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          CADDY_ONLY: ${{ inputs.caddy_only }}
+        run: |
+          set -euo pipefail
+          if [ "$CADDY_ONLY" = "true" ]; then
+            echo "publish_website=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "publish_website=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out push range
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve push release scope
+        id: push
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AFTER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          changed_paths="$(git diff --name-only --no-renames "$BEFORE_SHA" "$AFTER_SHA")"
+          publish_website=false
+          if grep -Eq '^((app|public)/|Dockerfile$|\.dockerignore$|\.openai/hosting\.json$|next\.config\.ts$|package(-lock)?\.json$|tsconfig\.json$|vite\.config\.ts$)' <<<"$changed_paths"; then
+            publish_website=true
+          fi
+          echo "publish_website=$publish_website" >>"$GITHUB_OUTPUT"
+
   quality:
-    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.verify_only) }}
+    needs: validate-dispatch
+    if: ${{ needs.validate-dispatch.result == 'success' && !(github.event_name == 'workflow_dispatch' && inputs.verify_only) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -110,6 +185,7 @@ jobs:
     needs:
       - quality
       - publish
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.caddy_only }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -167,7 +243,10 @@ jobs:
           test "$(docker exec "$container_id" id -u)" = "1000"
 
   publish:
-    needs: quality
+    needs:
+      - quality
+      - release-scope
+    if: ${{ needs.release-scope.outputs.publish_website == 'true' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -225,7 +304,9 @@ jobs:
     needs:
       - publish
       - container-smoke
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_dispatch' || !inputs.caddy_only)
     runs-on: ubuntu-latest
 
     permissions:
@@ -252,15 +333,28 @@ jobs:
 
   deploy:
     needs:
+      - validate-dispatch
+      - quality
       - publish
       - container-smoke
       - promote
     if: >-
+      always() &&
       github.event_name == 'workflow_dispatch' &&
       inputs.deploy &&
       github.repository == 'starsnap/starsnap-website' &&
       github.ref == 'refs/heads/main' &&
-      vars.SWARM_DEPLOY_ENABLED == 'true'
+      vars.SWARM_DEPLOY_ENABLED == 'true' &&
+      needs.validate-dispatch.result == 'success' &&
+      needs.quality.result == 'success' &&
+      (
+        inputs.caddy_only ||
+        (
+          needs.publish.result == 'success' &&
+          needs.container-smoke.result == 'success' &&
+          needs.promote.result == 'success'
+        )
+      )
     runs-on:
       group: starsnap-production
       labels: starsnap-swarm
@@ -278,7 +372,8 @@ jobs:
     env:
       STACK_NAME: starsnap-company
       SERVICE_NAME: starsnap-company_website
-      STARSNAP_WEBSITE_IMAGE: ghcr.io/starsnap/starsnap-website@${{ needs.publish.outputs.digest }}
+      STARSNAP_WEBSITE_IMAGE: ${{ inputs.caddy_only && 'caddy-only-current-image' || format('ghcr.io/starsnap/starsnap-website@{0}', needs.publish.outputs.digest) }}
+      CADDY_ONLY: ${{ inputs.caddy_only }}
 
     steps:
       - name: Check out deployment files
@@ -293,6 +388,21 @@ jobs:
           set -euo pipefail
           test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = "true"
 
+      - name: Pin the current website specification for a Caddy-only release
+        if: ${{ inputs.caddy_only }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_image="$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$SERVICE_NAME")"
+          current_version="$(docker service inspect --format '{{.Version.Index}}' "$SERVICE_NAME")"
+          [[ "$current_image" =~ ^ghcr\.io/starsnap/starsnap-website@sha256:[0-9a-f]{64}$ ]]
+          [[ "$current_version" =~ ^[1-9][0-9]*$ ]]
+          {
+            echo "STARSNAP_WEBSITE_IMAGE=$current_image"
+            echo "WEBSITE_IMAGE_BEFORE=$current_image"
+            echo "WEBSITE_VERSION_BEFORE=$current_version"
+          } >>"$GITHUB_ENV"
+
       - name: Sign in to GHCR for deployment
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -304,10 +414,21 @@ jobs:
         shell: bash
         run: bash deploy/deploy-swarm.sh
 
+      - name: Verify a Caddy-only release did not update the website service
+        if: ${{ inputs.caddy_only }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$SERVICE_NAME")" = "$WEBSITE_IMAGE_BEFORE"
+          test "$(docker service inspect --format '{{.Version.Index}}' "$SERVICE_NAME")" = "$WEBSITE_VERSION_BEFORE"
+
   external-verify:
-    needs: deploy
+    needs:
+      - validate-dispatch
+      - deploy
     if: >-
       always() &&
+      needs.validate-dispatch.result == 'success' &&
       (
         (github.event_name == 'workflow_dispatch' && inputs.verify_only) ||
         needs.deploy.result == 'success'

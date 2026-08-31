@@ -4,6 +4,9 @@ The container workflow builds one multi-platform image, publishes its immutable
 manifest digest, smoke-tests that exact digest on AMD64 and ARM64, promotes the
 verified digest to `latest`, and deploys the digest to Docker Swarm only for an
 explicit manual dispatch with `deploy=true`. A push never mutates production.
+For a routing-only release, dispatch with both `deploy=true` and
+`caddy_only=true`; the workflow pins the currently running website digest and
+fails if the website service specification changes while Caddy is updated.
 
 ## GitHub configuration
 
@@ -146,8 +149,16 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   used by the SNS surface. The backend `CORS_ORIGIN_PATTERNS` value must include
   both `https://sns.starsnap.kr` and `https://chat.starsnap.kr`. Caddy adds a
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
-  verification also requires the shared web build's `social chat` capability
+  verification also requires the shared web build's `social chat bible` capability
   marker so an older SNS-only image cannot pass the Chat release gate.
+- `https://bible.starsnap.kr/*` is reverse-proxied to the same
+  `starsnap-sns_web:3000` service and selects the Bible search/private-meditation
+  shell from the hostname. The backend `CORS_ORIGIN_PATTERNS` value must include
+  only the approved Bible origin in addition to the existing SNS/Chat origins.
+  Protected text stays unavailable until the environment grant, translation
+  allowlist, licence expiry, and enabled database translation row all agree.
+  Caddy adds the same frame, MIME-sniffing, and referrer guards as Chat, and
+  verification requires the `social chat bible` capability marker.
 - `https://log.starsnap.kr/*` serves `starsnap-log_web:5173`; only
   `/api/dashboard/*` is proxied to `starsnap-log_server:8081`, while all other
   public `/api/*` routes remain hidden with HTTP 404. The Hub database is a
@@ -212,6 +223,9 @@ mode. It verifies:
   its same-origin `/api/health` returns `{"status":"ok"}`.
 - Chat HTTP redirects to HTTPS, its public root contains the StarSnap title, and
   its same-origin `/api/health` returns `{"status":"ok"}`.
+- Bible HTTP redirects to HTTPS, its public root contains the `social chat bible`
+  capability marker and Bible surface header, and its same-origin `/api/health`
+  returns `{"status":"ok"}`.
 - Admin HTTP redirects to HTTPS, its public root contains the `StarSnap Admin`
   marker, and `/api/health` returns HTTP 200 with `{"status":"ok"}`.
 
@@ -226,7 +240,7 @@ verify-only request or after a successful normal deployment. Verify-only runs
 use a run-specific concurrency group, so they do not wait behind a build or
 deployment queued for the same branch.
 
-Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, `chat`, and `admin`
+Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, `chat`, `bible`, and `admin`
 names at the router's public IPv4 address, and the router must forward TCP 80 and
 443 to the manager's ports 80 and 443. Keep port 80 reachable because ACME
 validation and the required HTTP-to-HTTPS redirects use it. Avoid publishing an

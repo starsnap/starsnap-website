@@ -9,6 +9,7 @@ const securityProbeCases = [
   ["erp.starsnap.kr", "/%2Eenv"],
   ["sns.starsnap.kr", "/nested/.git/config"],
   ["chat.starsnap.kr", "/.git%2Fconfig"],
+  ["bible.starsnap.kr", "/nested/.env.production"],
   ["admin.starsnap.kr", "/WP-LOGIN.PHP"],
   ["log.starsnap.kr", "/nested/PHPMyAdmin/"],
 ];
@@ -217,7 +218,7 @@ async function main() {
   const chatRoot = await caddyHttps("chat.starsnap.kr", "/");
   expectMarker(
     chatRoot,
-    'name="starsnap-app-surfaces" content="social chat"',
+    'name="starsnap-app-surfaces" content="social chat bible"',
     "Chat HTTPS root",
   );
   expectHeader(chatRoot, "x-starsnap-app-surface", "chat", "Chat HTTPS root");
@@ -239,6 +240,39 @@ async function main() {
   }
   if (chatPayload.status !== "ok") {
     throw new Error("Chat HTTPS health status was not ok");
+  }
+
+  expectRedirect(
+    await caddyHttp("bible.starsnap.kr", "/api/health"),
+    308,
+    "https://bible.starsnap.kr/api/health",
+    "Bible HTTP redirect",
+  );
+  const bibleRoot = await caddyHttps("bible.starsnap.kr", "/");
+  expectMarker(
+    bibleRoot,
+    'name="starsnap-app-surfaces" content="social chat bible"',
+    "Bible HTTPS root",
+  );
+  expectHeader(bibleRoot, "x-starsnap-app-surface", "bible", "Bible HTTPS root");
+  expectHeader(bibleRoot, "x-frame-options", "DENY", "Bible HTTPS root");
+  expectHeader(bibleRoot, "x-content-type-options", "nosniff", "Bible HTTPS root");
+  expectHeader(
+    bibleRoot,
+    "referrer-policy",
+    "strict-origin-when-cross-origin",
+    "Bible HTTPS root",
+  );
+  const bibleHealth = await caddyHttps("bible.starsnap.kr", "/api/health");
+  expectSuccess(bibleHealth, "Bible HTTPS health");
+  let biblePayload;
+  try {
+    biblePayload = JSON.parse(bibleHealth.body.toString("utf8"));
+  } catch {
+    throw new Error("Bible HTTPS health did not return JSON");
+  }
+  if (biblePayload.status !== "ok") {
+    throw new Error("Bible HTTPS health status was not ok");
   }
 
   expectRedirect(

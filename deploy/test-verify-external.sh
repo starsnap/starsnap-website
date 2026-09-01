@@ -164,7 +164,7 @@ curl() {
       if [[ "$FAKE_EXTERNAL_MODE" == "bad_bible_health" ]]; then
         printf '%s' '{"status": "degraded"}' >"$output"
       else
-        printf '%s' '{"status": "ok"}' >"$output"
+        printf '%s' '{"status": "UP", "service": "starsnap-bible-server"}' >"$output"
       fi
       ;;
     'https://admin.starsnap.kr/')

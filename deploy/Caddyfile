@@ -83,6 +83,11 @@ bible.starsnap.kr {
 		X-Frame-Options "DENY"
 		X-StarSnap-App-Surface "bible"
 	}
+
+	@bible_api path /api/bible/* /api/health
+	handle @bible_api {
+		reverse_proxy starsnap-bible_server:8080
+	}
 	handle {
 		reverse_proxy starsnap-sns_web:3000
 	}

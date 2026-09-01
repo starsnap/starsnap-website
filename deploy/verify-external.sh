@@ -114,6 +114,8 @@ verify_ok_json() {
   local request_url="$1"
   local output_file="$2"
   local label="$3"
+  local expected_status="${4:-ok}"
+  local expected_service="${5:-}"
   local status=""
 
   if ! curl "${curl_common[@]}" \
@@ -133,11 +135,12 @@ verify_ok_json() {
     const fs = require("fs");
     try {
       const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-      if (!payload || payload.status !== "ok") process.exit(1);
+      if (!payload || payload.status !== process.argv[2]) process.exit(1);
+      if (process.argv[3] && payload.service !== process.argv[3]) process.exit(1);
     } catch {
       process.exit(1);
     }
-  ' "$output_file"; then
+  ' "$output_file" "$expected_status" "$expected_service"; then
     echo "$label response was not ok." >&2
     return 1
   fi
@@ -318,7 +321,9 @@ verify_once() {
   verify_ok_json \
     "${bible_https_url}/api/health" \
     "$bible_health_file" \
-    "Public Bible API health" || return 1
+    "Public Bible API health" \
+    "UP" \
+    "starsnap-bible-server" || return 1
 
   if ! curl "${curl_common[@]}" --fail --output "$admin_index_file" "${admin_https_url}/"; then
     echo "Public Admin root request failed." >&2

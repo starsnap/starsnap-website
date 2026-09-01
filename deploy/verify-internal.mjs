@@ -10,6 +10,7 @@ const securityProbeCases = [
   ["sns.starsnap.kr", "/nested/.git/config"],
   ["chat.starsnap.kr", "/.git%2Fconfig"],
   ["bible.starsnap.kr", "/nested/.env.production"],
+  ["bible.starsnap.kr", "/api/bible/.env"],
   ["admin.starsnap.kr", "/WP-LOGIN.PHP"],
   ["log.starsnap.kr", "/nested/PHPMyAdmin/"],
 ];
@@ -271,8 +272,8 @@ async function main() {
   } catch {
     throw new Error("Bible HTTPS health did not return JSON");
   }
-  if (biblePayload.status !== "ok") {
-    throw new Error("Bible HTTPS health status was not ok");
+  if (biblePayload.status !== "UP" || biblePayload.service !== "starsnap-bible-server") {
+    throw new Error("Bible HTTPS health response was not ready");
   }
 
   expectRedirect(

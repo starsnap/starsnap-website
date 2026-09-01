@@ -423,6 +423,7 @@ grep -Fq "path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-logi
 grep -Fq 'header X-StarSnap-Edge-Guard "scanner-probe"' deploy/Caddyfile
 test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "8"
 grep -Fq 'const securityProbeCases = [' deploy/verify-internal.mjs
+grep -Fq '["bible.starsnap.kr", "/api/bible/.env"]' deploy/verify-internal.mjs
 grep -Fq 'security probe guard' deploy/verify-internal.mjs
 grep -Fq '"x-starsnap-edge-guard"' deploy/verify-internal.mjs
 grep -Fq "chat.starsnap.kr {" deploy/Caddyfile
@@ -434,6 +435,8 @@ grep -Fq 'X-Frame-Options "DENY"' <<<"$chat_caddy_block"
 grep -Fq 'X-StarSnap-App-Surface "chat"' <<<"$chat_caddy_block"
 grep -Fq "bible.starsnap.kr {" deploy/Caddyfile
 bible_caddy_block="$(sed -n '/^bible\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
+grep -Fq "@bible_api path /api/bible/* /api/health" <<<"$bible_caddy_block"
+grep -Fq "reverse_proxy starsnap-bible_server:8080" <<<"$bible_caddy_block"
 grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$bible_caddy_block"
 grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$bible_caddy_block"
 grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$bible_caddy_block"
@@ -455,6 +458,8 @@ grep -Fq 'expectHeader(chatRoot, "x-starsnap-app-surface", "chat"' deploy/verify
 grep -Fq 'caddyHttp("bible.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("bible.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("bible.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
+grep -Fq 'biblePayload.status !== "UP"' deploy/verify-internal.mjs
+grep -Fq 'biblePayload.service !== "starsnap-bible-server"' deploy/verify-internal.mjs
 grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' deploy/verify-internal.mjs
 grep -Fq 'expectHeader(bibleRoot, "x-starsnap-app-surface", "bible"' deploy/verify-internal.mjs
 grep -Fq 'CADDY_ONLY must be true or false' deploy/deploy-swarm.sh

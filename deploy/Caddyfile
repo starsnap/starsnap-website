@@ -88,8 +88,12 @@ bible.starsnap.kr {
 	handle @bible_api {
 		reverse_proxy starsnap-bible_server:8080
 	}
+	@bible_blocked_api path /api/*
+	handle @bible_blocked_api {
+		respond 404
+	}
 	handle {
-		reverse_proxy starsnap-sns_web:3000
+		reverse_proxy starsnap-bible_web:3000
 	}
 }
 

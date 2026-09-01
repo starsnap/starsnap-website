@@ -437,7 +437,12 @@ grep -Fq "bible.starsnap.kr {" deploy/Caddyfile
 bible_caddy_block="$(sed -n '/^bible\.starsnap\.kr {$/,/^admin\.starsnap\.kr {$/p' deploy/Caddyfile)"
 grep -Fq "@bible_api path /api/bible/* /api/health" <<<"$bible_caddy_block"
 grep -Fq "reverse_proxy starsnap-bible_server:8080" <<<"$bible_caddy_block"
-grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$bible_caddy_block"
+grep -Fq "@bible_blocked_api path /api/*" <<<"$bible_caddy_block"
+grep -Fq "reverse_proxy starsnap-bible_web:3000" <<<"$bible_caddy_block"
+if grep -Fq "reverse_proxy starsnap-sns_web:3000" <<<"$bible_caddy_block"; then
+  echo "Bible frontend must not route to the SNS web service" >&2
+  exit 1
+fi
 grep -Fq 'Content-Security-Policy "frame-ancestors '\''none'\''"' <<<"$bible_caddy_block"
 grep -Fq 'X-Content-Type-Options "nosniff"' <<<"$bible_caddy_block"
 grep -Fq 'X-Frame-Options "DENY"' <<<"$bible_caddy_block"

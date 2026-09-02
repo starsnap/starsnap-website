@@ -252,7 +252,7 @@ async function main() {
   const bibleRoot = await caddyHttps("bible.starsnap.kr", "/");
   expectMarker(
     bibleRoot,
-    'name="starsnap-app-surfaces" content="social chat bible"',
+    "<title>StarSnap Bible</title>",
     "Bible HTTPS root",
   );
   expectHeader(bibleRoot, "x-starsnap-app-surface", "bible", "Bible HTTPS root");

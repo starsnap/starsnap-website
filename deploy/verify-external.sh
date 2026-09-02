@@ -307,8 +307,8 @@ verify_once() {
     echo "Public Bible root request failed." >&2
     return 1
   fi
-  if ! grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' "$bible_index_file"; then
-    echo "Public Bible root response did not contain the Bible surface capability marker." >&2
+  if ! grep -Fq '<title>StarSnap Bible</title>' "$bible_index_file"; then
+    echo "Public Bible root response did not contain the StarSnap Bible title marker." >&2
     return 1
   fi
   local bible_surface=""

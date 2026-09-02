@@ -466,6 +466,7 @@ grep -Fq 'caddyHttps("bible.starsnap.kr", "/api/health")' deploy/verify-internal
 grep -Fq 'biblePayload.status !== "UP"' deploy/verify-internal.mjs
 grep -Fq 'biblePayload.service !== "starsnap-bible-server"' deploy/verify-internal.mjs
 grep -Fq 'name="starsnap-app-surfaces" content="social chat bible"' deploy/verify-internal.mjs
+grep -Fq '<title>StarSnap Bible</title>' deploy/verify-internal.mjs
 grep -Fq 'expectHeader(bibleRoot, "x-starsnap-app-surface", "bible"' deploy/verify-internal.mjs
 grep -Fq 'CADDY_ONLY must be true or false' deploy/deploy-swarm.sh
 grep -Fq 'Caddy-only deployment verified' deploy/deploy-swarm.sh

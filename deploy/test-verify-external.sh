@@ -154,9 +154,9 @@ curl() {
         printf 'HTTP/2 200 OK\r\nX-StarSnap-App-Surface: bible\r\n\r\n' >"$dump_header"
       fi
       if [[ "$FAKE_EXTERNAL_MODE" == "bad_bible_marker" ]]; then
-        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat" /></html>' >"$output"
+        printf '%s' '<html><title>Unexpected app</title></html>' >"$output"
       else
-        printf '%s' '<html><meta name="starsnap-app-surfaces" content="social chat bible" /></html>' >"$output"
+        printf '%s' '<html><title>StarSnap Bible</title></html>' >"$output"
       fi
       ;;
     'https://bible.starsnap.kr/api/health')
@@ -353,10 +353,10 @@ if bad_bible_marker_output="$(
   STARSNAP_EXTERNAL_VERIFY_DELAY_SECONDS=0 \
     bash deploy/verify-external.sh 2>&1
 )"; then
-  echo "Expected a missing Bible capability marker to exhaust retries." >&2
+  echo "Expected a missing Bible title marker to exhaust retries." >&2
   exit 1
 fi
-grep -Fq "Public Bible root response did not contain the Bible surface capability marker" <<<"$bad_bible_marker_output"
+grep -Fq "Public Bible root response did not contain the StarSnap Bible title marker" <<<"$bad_bible_marker_output"
 test "$(wc -l <"$FAKE_EXTERNAL_CALL_LOG" | tr -d ' ')" = "40"
 test "$(wc -l <"$FAKE_EXTERNAL_SLEEP_LOG" | tr -d ' ')" = "1"
 

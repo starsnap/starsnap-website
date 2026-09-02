@@ -151,15 +151,12 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
   verification also requires the shared web build's `social chat bible` capability
   marker so an older SNS-only image cannot pass the Chat release gate.
-- `https://bible.starsnap.kr/*` serves the Bible shell from
-  `starsnap-sns_web:3000`, while `/api/bible/*` and `/api/health` are routed to
-  the independent `starsnap-bible_server:8080` service. Authentication remains
-  delegated to the existing SNS API session introspection endpoint.
-  Protected text stays unavailable until the environment grant, translation
-  allowlist, licence expiry, and enabled database translation row all agree.
-  Caddy adds the same frame, MIME-sniffing, and referrer guards as Chat, and
-  verification requires the `social chat bible` capability marker plus the
-  Bible server `{"status":"UP","service":"starsnap-bible-server"}` health response.
+- `https://bible.starsnap.kr/*` serves the independent Bible shell from
+  `starsnap-bible_web:3000`, while `/api/bible/*` and `/api/health` are routed to
+  `starsnap-bible_server:8080`. Caddy adds the same frame, MIME-sniffing, and
+  referrer guards as Chat. Verification requires the Bible shell's
+  `<title>StarSnap Bible</title>` marker plus the Bible server
+  `{"status":"UP","service":"starsnap-bible-server"}` health response.
 - `https://log.starsnap.kr/*` serves `starsnap-log_web:5173`; only
   `/api/dashboard/*` is proxied to `starsnap-log_server:8081`, while all other
   public `/api/*` routes remain hidden with HTTP 404. The Hub database is a
@@ -224,8 +221,8 @@ mode. It verifies:
   its same-origin `/api/health` returns `{"status":"ok"}`.
 - Chat HTTP redirects to HTTPS, its public root contains the StarSnap title, and
   its same-origin `/api/health` returns `{"status":"ok"}`.
-- Bible HTTP redirects to HTTPS, its public root contains the `social chat bible`
-  capability marker and Bible surface header, and its same-origin `/api/health`
+- Bible HTTP redirects to HTTPS, its public root contains the `StarSnap Bible`
+  title marker and Bible surface header, and its same-origin `/api/health`
   returns `{"status":"UP","service":"starsnap-bible-server"}`.
 - Admin HTTP redirects to HTTPS, its public root contains the `StarSnap Admin`
   marker, and `/api/health` returns HTTP 200 with `{"status":"ok"}`.

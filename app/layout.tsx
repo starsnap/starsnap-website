@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const siteUrl = 'https://starsnap-company.hamtory06.chatgpt.site';
+const siteUrl = 'https://starsnap.kr';
 const title = 'StarSnap | 사람의 연결부터 일의 흐름까지';
 const description =
   'StarSnap은 SNS와 ERP를 중심으로 일상과 비즈니스에 필요한 디지털 서비스를 만듭니다.';

@@ -147,7 +147,8 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   selects its message-only shell from the public hostname, while `/api/*` and
   `/ws-chat` continue to reach the same backend, chat rooms, and message store
   used by the SNS surface. The backend `CORS_ORIGIN_PATTERNS` value must include
-  both `https://sns.starsnap.kr` and `https://chat.starsnap.kr`. Caddy adds a
+  `https://sns.starsnap.kr`, `https://chat.starsnap.kr`, and
+  `https://bible.starsnap.kr`. Caddy adds a
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
   verification also requires the shared web build's `social chat bible` capability
   marker so an older SNS-only image cannot pass the Chat release gate.

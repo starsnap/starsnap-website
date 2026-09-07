@@ -1,0 +1,26 @@
+# Pending production fragment. Do not import this file until public DNS has
+# been approved and points bible.starsnap.kr at the StarSnap Caddy gateway.
+(bible_security_probe_guard) {
+	@bible_security_probe {
+		path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*
+	}
+	handle @bible_security_probe {
+		header X-StarSnap-Edge-Guard "scanner-probe"
+		respond 404
+	}
+}
+
+bible.starsnap.kr {
+	encode zstd gzip
+	import bible_security_probe_guard
+	header {
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-StarSnap-App-Surface "bible"
+	}
+	handle {
+		reverse_proxy 192.168.1.2:3000
+	}
+}

@@ -4,9 +4,9 @@
 
 ## Source of truth
 
-- 원본 토큰: `starsnap-main/starsnap-web/design-system/tokens.json`
+- 원본 토큰: `starsnap-main/starsnap-sns-web/design-system/tokens.json`
 - 회사 사이트 배포용 복사본: `app/starsnap-tokens.css`
-- 공통 아이콘: `starsnap-main/starsnap-web/src/components/icons/index.tsx`의 `StarIcon`
+- 공통 아이콘: `starsnap-main/starsnap-sns-web/src/components/icons/index.tsx`의 `StarIcon`
 - 공통 헤더·카드 관례: `AppHeader`, `SnapCard`, `CategoryChips`, `Tabs`
 
 `app/starsnap-tokens.css`는 공식 생성 CSS와 동일하게 유지합니다. 색상, 폰트, 간격, 반경, 그림자, 모션 값을 이 문서에서 별도로 재정의하지 않습니다.

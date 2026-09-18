@@ -15,7 +15,6 @@ readonly cleanup_timeout_seconds="${STARSNAP_CLEANUP_TIMEOUT_SECONDS:-60}"
 
 : "${STACK_NAME:=starsnap-company}"
 : "${SERVICE_NAME:=${STACK_NAME}_website}"
-: "${INTERNAL_VERIFIER_SERVICE_NAME:=starsnap-erp_web}"
 : "${STARSNAP_WEBSITE_IMAGE:?STARSNAP_WEBSITE_IMAGE is required}"
 : "${CADDY_ONLY:=false}"
 
@@ -46,7 +45,10 @@ labeled_runner_node_ids=""
 labeled_runner_node_count=""
 labeled_runner_node_id=""
 
-if [[ ! "$STARSNAP_WEBSITE_IMAGE" =~ $expected_image_pattern ]]; then
+website_verifier_image="$STARSNAP_WEBSITE_IMAGE"
+if [[ "$CADDY_ONLY" == true && "$STARSNAP_WEBSITE_IMAGE" =~ ^localhost/starsnap-company_website:relay-([0-9a-f]{64})$ ]]; then
+  website_verifier_image="sha256:${BASH_REMATCH[1]}"
+elif [[ ! "$STARSNAP_WEBSITE_IMAGE" =~ $expected_image_pattern ]]; then
   echo "Refusing to deploy a mutable or unexpected image reference." >&2
   exit 1
 fi
@@ -178,7 +180,21 @@ service_container_id() {
 
 service_health_status() {
   local target_service="$1"
-  local container_id=""
+  local container_id="" task_ids task state node image
+
+  if [[ "$target_service" == "$SERVICE_NAME" ]]; then
+    task_ids="$(docker service ps "$target_service" --filter desired-state=running --quiet)" || return 1
+    [[ "$(awk 'NF {count++} END {print count + 0}' <<<"$task_ids")" == 1 ]] || return 1
+    task="$(awk 'NF {print; exit}' <<<"$task_ids")"
+    IFS='|' read -r state node image < <(docker inspect --type task \
+      --format '{{.Status.State}}|{{.NodeID}}|{{.Spec.ContainerSpec.Image}}' "$task")
+    if [[ "$state" == running && "$node" == "$website_node_id" && "$image" == "$(service_image "$target_service")" ]]; then
+      printf '%s\n' healthy
+    else
+      printf '%s\n' not-ready
+    fi
+    return 0
+  fi
 
   if ! container_id="$(service_container_id "$target_service")"; then
     printf '%s\n' "not-ready"
@@ -191,17 +207,13 @@ service_health_status() {
 }
 
 verify_internal_routes_once() {
-  local verifier_container_id=""
-
-  if ! verifier_container_id="$(service_container_id "$INTERNAL_VERIFIER_SERVICE_NAME")"; then
-    return 1
-  fi
-
-  # The ERP task is attached to the shared application overlay used by Caddy
-  # and the migrated services. This keeps verification off the manager LAN and
-  # preserves normal CA/hostname validation for every public hostname.
-  docker exec --interactive "$verifier_container_id" \
-    node --input-type=module <"$internal_route_verifier"
+  local caddy_container_id=""
+  caddy_container_id="$(service_container_id "$caddy_service_name")" || return 1
+  # Reuse Caddy's network namespace; the application tasks may run on workers.
+  docker run --rm --interactive --network "container:$caddy_container_id" \
+    --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --memory 128m --cpus 0.25 --entrypoint node "$website_verifier_image" \
+    --input-type=module <"$internal_route_verifier"
 }
 
 wait_for_website() {
@@ -585,6 +597,10 @@ if [[ "$labeled_runner_node_id" != "$current_node_id" ]]; then
   exit 1
 fi
 
+website_node_id="$(docker node inspect --format '{{if and (eq .Status.State "ready") (eq .Spec.Availability "active") (eq .Spec.Role "worker")}}{{.ID}}{{end}}' swarm-worker-03)"
+readonly website_node_id
+test -n "$website_node_id"
+
 if ! api_network_details="$(docker network inspect \
   --format '{{.Driver}} {{.Scope}} {{.ID}}' \
   "$api_network_name")"; then
@@ -628,7 +644,9 @@ if grep -Fxq "$caddy_service_name" <<<"$service_names"; then
   previous_caddy_spec_digest="$(service_spec_digest "$caddy_service_name")"
 fi
 
-if ! docker pull "$STARSNAP_WEBSITE_IMAGE" >/dev/null; then
+if [[ "$website_verifier_image" == sha256:* ]]; then
+  test "$(docker image inspect --format '{{.Id}}' "$website_verifier_image")" = "$website_verifier_image"
+elif ! docker pull "$STARSNAP_WEBSITE_IMAGE" >/dev/null; then
   echo "Could not pull the verified website image on the Swarm manager." >&2
   exit 1
 fi
@@ -670,13 +688,16 @@ if ! grep -Fq "name: $api_network_name" "$rendered_stack" \
   exit 1
 fi
 
-if [[ "$(grep -Fc "node.role == manager" "$rendered_stack")" -lt 2 ]]; then
-  echo "Rendered stack must keep both services on the Swarm manager." >&2
+website_section="$(awk '/^  website:/{inside=1;next} /^  [^ ]/{inside=0} inside' "$rendered_stack")"
+caddy_section="$(awk '/^  caddy:/{inside=1;next} /^  [^ ]/{inside=0} inside' "$rendered_stack")"
+if ! grep -Fq 'node.hostname == swarm-worker-03' <<<"$website_section" \
+  || grep -Fq 'node.role == manager' <<<"$website_section"; then
+  echo "Rendered website must remain on swarm-worker-03." >&2
   exit 1
 fi
-
-if [[ "$(grep -Fc "node.labels.starsnap.actions-runner == true" "$rendered_stack")" -lt 2 ]]; then
-  echo "Rendered stack must pin both services to the labeled runner manager." >&2
+if ! grep -Fq 'node.role == manager' <<<"$caddy_section" \
+  || ! grep -Fq 'node.labels.starsnap.actions-runner == true' <<<"$caddy_section"; then
+  echo "Rendered Caddy must remain on the labeled Swarm manager." >&2
   exit 1
 fi
 

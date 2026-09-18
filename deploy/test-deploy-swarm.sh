@@ -92,7 +92,11 @@ docker() {
       fi
       ;;
     "node inspect")
-      printf '%s\n' "$FAKE_RUNNER_NODE_LABEL"
+      if [[ "${!#}" == swarm-worker-03 ]]; then
+        printf '%s\n' worker-3
+      else
+        printf '%s\n' "$FAKE_RUNNER_NODE_LABEL"
+      fi
       ;;
     "node ls")
       if [[ " $* " != *" --filter node.label=starsnap.actions-runner=true "* \
@@ -171,6 +175,14 @@ docker() {
       fi
       ;;
     "service ps")
+      if [[ -f "$FAKE_SWARM_STATE/current-image" ]]; then printf '%s\n' website-task; fi
+      ;;
+    "inspect --type")
+      if [[ "$FAKE_FAIL_CANDIDATE" == true && "$(cat "$FAKE_SWARM_STATE/current-image")" == "$candidate_image" ]]; then
+        printf 'starting|worker-3|%s\n' "$(cat "$FAKE_SWARM_STATE/current-image")"
+      else
+        printf 'running|worker-3|%s\n' "$(cat "$FAKE_SWARM_STATE/current-image")"
+      fi
       ;;
     "ps --filter")
       if [[ " $* " == *"com.docker.swarm.service.name=starsnap-erp_web"* ]]; then
@@ -200,22 +212,6 @@ docker() {
           printf '%s\n' "healthy"
         fi
       else
-        return 1
-      fi
-      ;;
-    "exec --interactive")
-      verifier_source="$(cat)"
-      if [[ "$3" != "erp-container" ]]; then
-        echo "Expected the route verifier to run from the ERP application network." >&2
-        return 1
-      fi
-      grep -Fq 'hostname: "caddy"' <<<"$verifier_source"
-      grep -Fq 'rejectUnauthorized: true' <<<"$verifier_source"
-      if [[ " $* " != *" node --input-type=module "* ]]; then
-        echo "Expected the route verifier to run as an ES module." >&2
-        return 1
-      fi
-      if [[ "$FAKE_FAIL_INTERNAL_ROUTES" == "true" ]]; then
         return 1
       fi
       ;;
@@ -265,8 +261,11 @@ docker() {
         rm -f -- "$FAKE_SWARM_STATE/caddy-spec"
       fi
       ;;
+    "image inspect")
+      printf '%s\n' "${!#}"
+      ;;
     "stack config")
-      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n    networks:\n      default: null\n      starsnap_main_app_net: null\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\nnetworks:\n  starsnap_main_app_net:\n    name: starsnap-main_app-net\n    external: true\n' \
+      printf 'services:\n  caddy:\n    deploy:\n      placement:\n        constraints:\n          - node.role == manager\n          - node.labels.starsnap.actions-runner == true\n    image: %s\n    networks:\n      default: null\n      starsnap_main_app_net: null\n  website:\n    deploy:\n      placement:\n        constraints:\n          - node.hostname == swarm-worker-03\n    image: %s\nconfigs:\n  caddyfile:\n    name: %s\nnetworks:\n  starsnap_main_app_net:\n    name: starsnap-main_app-net\n    external: true\n' \
         "$caddy_image" "$STARSNAP_WEBSITE_IMAGE" "$CADDY_CONFIG_NAME"
       ;;
     "stack ls")
@@ -278,11 +277,17 @@ docker() {
       printf '%s\n' "$2" >>"$FAKE_SWARM_STATE/pulled-image"
       ;;
     "run --rm")
-      if [[ " $* " != *" $caddy_image "* || " $* " != *" validate --config - --adapter caddyfile "* ]]; then
-        echo "Expected the pinned Caddy image to validate stdin." >&2
-        return 1
+      if [[ " $* " == *" --entrypoint node "* ]]; then
+        [[ " $* " == *" --network container:caddy-container "* ]]
+        [[ " $* " == *" --input-type=module "* ]]
+        verifier_source="$(cat)"
+        grep -Fq 'hostname: "caddy"' <<<"$verifier_source"
+        grep -Fq 'rejectUnauthorized: true' <<<"$verifier_source"
+        [[ "$FAKE_FAIL_INTERNAL_ROUTES" != true ]] || return 1
+      else
+        [[ " $* " == *" $caddy_image "* && " $* " == *" validate --config - --adapter caddyfile "* ]] || return 1
+        cat >/dev/null
       fi
-      cat >/dev/null
       ;;
     "network inspect")
       if [[ "$FAKE_API_NETWORK_MISSING" == "true" ]]; then
@@ -636,5 +641,14 @@ fi
 test "$(cat "$FAKE_SWARM_STATE/current-image")" = "$previous_image"
 test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 test ! -e "$FAKE_SWARM_STATE/stack-remove-requested"
+
+reset_state
+seed_previous_caddy
+relay_image="localhost/starsnap-company_website:relay-$(printf 'a%.0s' {1..64})"
+printf '%s' "$relay_image" >"$FAKE_SWARM_STATE/current-image"
+CADDY_ONLY=true STARSNAP_WEBSITE_IMAGE="$relay_image" \
+  bash deploy/deploy-swarm.sh | grep -Fq 'Caddy-only deployment verified'
+test "$(cat "$FAKE_SWARM_STATE/current-image")" = "$relay_image"
+test ! -e "$FAKE_SWARM_STATE/rollback-requested"
 
 echo "deploy-swarm tests passed"

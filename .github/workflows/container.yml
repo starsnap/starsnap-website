@@ -395,7 +395,8 @@ jobs:
           set -euo pipefail
           current_image="$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$SERVICE_NAME")"
           current_version="$(docker service inspect --format '{{.Version.Index}}' "$SERVICE_NAME")"
-          [[ "$current_image" =~ ^ghcr\.io/starsnap/starsnap-website@sha256:[0-9a-f]{64}$ ]]
+          [[ "$current_image" =~ ^ghcr\.io/starsnap/starsnap-website@sha256:[0-9a-f]{64}$ ]] \
+            || [[ "$current_image" =~ ^localhost/starsnap-company_website:relay-[0-9a-f]{64}$ ]]
           [[ "$current_version" =~ ^[1-9][0-9]*$ ]]
           {
             echo "STARSNAP_WEBSITE_IMAGE=$current_image"

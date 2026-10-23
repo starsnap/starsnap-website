@@ -121,7 +121,7 @@ export default function Home() {
               <h3>관심사가 관계가 되는 곳</h3>
               <p>콘텐츠와 관심사를 중심으로 사람을 발견하고, 관계를 이어가는 소셜 서비스입니다.</p>
             </div>
-            <a href="#contact" aria-label="SNS 서비스 문의하기"><ArrowUpRight /></a>
+            <a href="https://sns.starsnap.kr">SNS 시작하기 <ArrowUpRight /></a>
           </article>
           <article className="service-card service-card-yellow">
             <span className="service-number">02</span>
@@ -130,7 +130,7 @@ export default function Home() {
               <h3>복잡한 업무를 하나의 흐름으로</h3>
               <p>흩어진 정보와 프로세스를 모아, 팀이 더 명확하게 협업하고 운영하도록 돕습니다.</p>
             </div>
-            <a href="#contact" aria-label="ERP 서비스 문의하기"><ArrowUpRight /></a>
+            <a href="https://erp.starsnap.kr">ERP 살펴보기 <ArrowUpRight /></a>
           </article>
         </div>
       </section>

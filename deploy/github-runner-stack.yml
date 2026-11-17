@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   runner:
-    image: ghcr.io/actions/actions-runner@sha256:3acad7b3f8d1b89d1442d97f403208ea50c25b4ddc8d311b01aa7872b2defa2d
+    image: ghcr.io/actions/actions-runner@sha256:73f9d0dfeb4407929795093a3dc9097fda582646610d445b28860e294e020b93 # 2.338.2 (linux/arm64)
     init: true
     user: "0:0"
     command:

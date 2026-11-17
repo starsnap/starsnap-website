@@ -423,6 +423,30 @@ jobs:
           test "$(docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' "$SERVICE_NAME")" = "$WEBSITE_IMAGE_BEFORE"
           test "$(docker service inspect --format '{{.Version.Index}}' "$SERVICE_NAME")" = "$WEBSITE_VERSION_BEFORE"
 
+  runner-verification:
+    name: Verify ARM64 production runner
+    needs: validate-dispatch
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.verify_only &&
+      !inputs.deploy &&
+      !inputs.caddy_only
+    runs-on:
+      group: starsnap-production
+      labels: starsnap-swarm
+    permissions: {}
+    timeout-minutes: 3
+    steps:
+      - name: Check runner identity and Swarm access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_NAME" = starsnap-swarm-arm64-01
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = ARM64
+          test "$(docker info --format '{{.Swarm.ControlAvailable}}')" = true
+
   external-verify:
     needs:
       - validate-dispatch

@@ -61,7 +61,7 @@ to `true` only after the steady-state service and empty secret attachment are
 verified.
 
 The runner image is pinned to the ARM64 manifest digest for official GitHub
-Actions Runner `2.336.0`. Updates are intentional changes: verify the new ARM64
+Actions Runner `2.338.2`. Updates are intentional changes: verify the new ARM64
 digest before replacing it, since the runner is configured with automatic
 updates disabled.
 

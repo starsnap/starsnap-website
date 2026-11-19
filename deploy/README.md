@@ -147,17 +147,10 @@ Caddy publishes TCP ports 80 and 443; the website keeps its existing port
   selects its message-only shell from the public hostname, while `/api/*` and
   `/ws-chat` continue to reach the same backend, chat rooms, and message store
   used by the SNS surface. The backend `CORS_ORIGIN_PATTERNS` value must include
-  `https://sns.starsnap.kr`, `https://chat.starsnap.kr`, and
-  `https://bible.starsnap.kr`. Caddy adds a
+  `https://sns.starsnap.kr` and `https://chat.starsnap.kr`. Caddy adds a
   Chat-specific surface header plus frame, MIME-sniffing, and referrer guards;
-  verification also requires the shared web build's `social chat bible` capability
+  verification also requires the shared web build's `social chat` capability
   marker so an older SNS-only image cannot pass the Chat release gate.
-- `https://bible.starsnap.kr/*` serves the independent Bible shell from
-  `starsnap-bible_web:3000`, while `/api/bible/*` and `/api/health` are routed to
-  `starsnap-bible_server:8080`. Caddy adds the same frame, MIME-sniffing, and
-  referrer guards as Chat. Verification requires the Bible shell's
-  `<title>StarSnap Bible</title>` marker plus the Bible server
-  `{"status":"UP","service":"starsnap-bible-server"}` health response.
 - `https://log.starsnap.kr/*` serves `starsnap-log_web:5173`; only
   `/api/dashboard/*` is proxied to `starsnap-log_server:8081`, while all other
   public `/api/*` routes remain hidden with HTTP 404. The Hub database is a
@@ -222,9 +215,6 @@ mode. It verifies:
   its same-origin `/api/health` returns `{"status":"ok"}`.
 - Chat HTTP redirects to HTTPS, its public root contains the StarSnap title, and
   its same-origin `/api/health` returns `{"status":"ok"}`.
-- Bible HTTP redirects to HTTPS, its public root contains the `StarSnap Bible`
-  title marker and Bible surface header, and its same-origin `/api/health`
-  returns `{"status":"UP","service":"starsnap-bible-server"}`.
 - Admin HTTP redirects to HTTPS, its public root contains the `StarSnap Admin`
   marker, and `/api/health` returns HTTP 200 with `{"status":"ok"}`.
 
@@ -239,7 +229,7 @@ verify-only request or after a successful normal deployment. Verify-only runs
 use a run-specific concurrency group, so they do not wait behind a build or
 deployment queued for the same branch.
 
-Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, `chat`, `bible`, and `admin`
+Before the first deployment, public DNS must point the apex, `www`, `api`, `erp`, `sns`, `chat`, and `admin`
 names at the router's public IPv4 address, and the router must forward TCP 80 and
 443 to the manager's ports 80 and 443. Keep port 80 reachable because ACME
 validation and the required HTTP-to-HTTPS redirects use it. Avoid publishing an

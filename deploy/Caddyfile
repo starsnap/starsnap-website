@@ -79,30 +79,6 @@ chat.starsnap.kr {
 	}
 }
 
-bible.starsnap.kr {
-	encode zstd gzip
-	import security_probe_guard
-	header {
-		Content-Security-Policy "frame-ancestors 'none'"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		X-StarSnap-App-Surface "bible"
-	}
-
-	@bible_api path /api/bible/* /api/health
-	handle @bible_api {
-		reverse_proxy starsnap-bible_server:8080
-	}
-	@bible_blocked_api path /api/*
-	handle @bible_blocked_api {
-		respond 404
-	}
-	handle {
-		reverse_proxy starsnap-bible_web:3000
-	}
-}
-
 admin.starsnap.kr {
 	encode zstd gzip
 	import security_probe_guard

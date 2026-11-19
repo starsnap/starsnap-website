@@ -2,6 +2,27 @@
 	admin 127.0.0.1:2019
 }
 
+(starsnap_http_access_log) {
+	log {
+		output file /var/log/starsnap-http/access.log {
+			mode 0600
+			roll_size 10MiB
+			roll_keep 5
+			roll_uncompressed
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				request>tls delete
+				request>uri regexp "\?.*$" ""
+				resp_headers delete
+				user_id delete
+			}
+		}
+	}
+}
+
 (security_probe_guard) {
 	@security_probe {
 		path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*
@@ -14,6 +35,7 @@
 }
 
 starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 
@@ -32,6 +54,7 @@ api.starsnap.kr {
 }
 
 erp.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 	header {
@@ -56,6 +79,7 @@ erp.starsnap.kr {
 }
 
 sns.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 
@@ -65,6 +89,7 @@ sns.starsnap.kr {
 }
 
 chat.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 	header {
@@ -80,6 +105,7 @@ chat.starsnap.kr {
 }
 
 bible.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 	header {
@@ -104,6 +130,7 @@ bible.starsnap.kr {
 }
 
 admin.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 	header {
@@ -113,6 +140,7 @@ admin.starsnap.kr {
 	}
 
 	@admin_api path /api/*
+	log_skip @admin_api
 	handle @admin_api {
 		reverse_proxy starsnap-admin_server:8082
 	}
@@ -122,6 +150,7 @@ admin.starsnap.kr {
 }
 
 log.starsnap.kr {
+	import starsnap_http_access_log
 	encode zstd gzip
 	import security_probe_guard
 	header {
@@ -146,9 +175,11 @@ log.starsnap.kr {
 }
 
 www.starsnap.kr {
+	import starsnap_http_access_log
 	redir https://starsnap.kr{uri} permanent
 }
 
 http://www.starsnap.kr {
+	import starsnap_http_access_log
 	redir https://starsnap.kr{uri} permanent
 }

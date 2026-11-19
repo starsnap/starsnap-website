@@ -91,6 +91,7 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - http_access_logs:/var/log/starsnap-http
 
     networks:
       - default
@@ -149,6 +150,9 @@ configs:
 volumes:
   caddy_data:
   caddy_config:
+  http_access_logs:
+    external: true
+    name: starsnap-http-access-logs
 
 networks:
   starsnap_main_app_net:

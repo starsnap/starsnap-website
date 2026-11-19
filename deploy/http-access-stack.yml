@@ -1,0 +1,48 @@
+services:
+  forwarder:
+    image: docker.io/library/python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    command: [python, -B, /etc/starsnap/http-access-forwarder.py]
+    read_only: true
+    configs:
+      - source: forwarder
+        target: /etc/starsnap/http-access-forwarder.py
+    secrets:
+      - source: hub_ingest
+        target: hub-ingest-secret
+        mode: 0400
+    volumes:
+      - access_logs:/var/log/starsnap-http
+    networks:
+      - app_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.starsnap.actions-runner == true
+      update_config:
+        order: stop-first
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.25'
+
+configs:
+  forwarder:
+    name: starsnap-http-access-forwarder-20261119
+    file: ./http-access-forwarder.py
+
+secrets:
+  hub_ingest:
+    external: true
+    name: starsnap-platform-hub-ingest-v1
+
+volumes:
+  access_logs:
+    external: true
+    name: starsnap-http-access-logs
+
+networks:
+  app_net:
+    external: true
+    name: starsnap-main_app-net

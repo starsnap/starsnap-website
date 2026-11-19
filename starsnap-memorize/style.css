@@ -45,26 +45,15 @@ p, h1, h2, h3, h4, dl, dd { margin: 0; }
 .card { min-width: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 15px; }
 .card-head { display: flex; align-items: center; border-bottom: 1px solid var(--line); padding: 17px 21px; }
 .card-head h2 { font-size: 1.06rem; letter-spacing: -.025em; }
-.series { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 13px 14px 10px; padding: 4px; border-radius: 10px; background: #edf0e9; }
-.series-button { min-height: 42px; padding: 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: .84rem; font-weight: 750; }
-.series-button[aria-pressed="true"] { background: #fff; border-color: var(--line); color: var(--accent-dark); }
-.verse-group { padding: 9px 12px 10px; }
-.verse-group + .verse-group { border-top: 1px solid #edf0ec; }
-.verse-group h3 { padding: 0 7px 5px; font-size: .8rem; color: var(--muted); }
-.passages { margin: 0; padding: 0; list-style: none; }
-.passages li + li { margin-top: 4px; }
-.passage-row { border: 1px solid transparent; border-radius: 8px; }
-.passage-row:hover { background: #f6f8f4; }
-.passage-row.selected { background: var(--tint); border-color: #bfd3c2; }
-.passage { display: grid; grid-template-columns: 32px minmax(0, 1fr) 22px; text-align: left; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); }
-.passage-title { min-width: 0; overflow-wrap: anywhere; font-size: .93rem; font-weight: 750; }
-.verse-number { color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
-.verse-mark { color: var(--accent); text-align: center; font-weight: 800; }
+.passages { display: grid; grid-template-columns: repeat(auto-fit, minmax(46px, 1fr)); gap: 8px; margin: 0; padding: 16px; list-style: none; }
+.passage { position: relative; width: 100%; min-height: 44px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-weight: 750; font-variant-numeric: tabular-nums; }
+.passage:hover { background: #f6f8f4; }
+.passage[aria-current="true"] { background: var(--tint); border-color: var(--accent); }
+.completion-mark { position: absolute; top: 1px; right: 4px; color: var(--accent); font-size: .68rem; }
 .practice { grid-area: practice; position: sticky; top: 14px; }
 .exercise { padding: 21px; }
-.exercise-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+.exercise-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 17px; }
 .exercise-head h3 { letter-spacing: -.035em; font-size: clamp(1.45rem, 4vw, 2rem); overflow-wrap: anywhere; }
-.topic { margin-bottom: 5px; }
 .muted { color: var(--muted); font-size: .84rem; }
 label { display: block; margin-bottom: 6px; font-size: .92rem; font-weight: 750; }
 textarea { display: block; width: 100%; min-height: 120px; resize: vertical; border: 1px solid #c6d1c6; border-radius: 9px; background: #fff; color: var(--ink); padding: 10px 12px; }

@@ -20,14 +20,14 @@
     <div class="intro">
       <div>
         <h1>암송 체크</h1>
-        <p>구절 번호를 보고 기억나는 말씀을 직접 적어 보세요.</p>
+        <p>문제를 고르고 기억나는 말씀을 직접 적어 보세요.</p>
       </div>
     </div>
 
     <dl class="stats" aria-label="암송 현황">
-      <div><dt>전체 구절</dt><dd id="total">24</dd></div>
+      <div><dt>전체 문제</dt><dd id="total">24</dd></div>
       <div><dt>암송 완료</dt><dd id="passed">0</dd></div>
-      <div><dt>남은 구절</dt><dd id="pending">24</dd></div>
+      <div><dt>남은 문제</dt><dd id="pending">24</dd></div>
     </dl>
 
     <p id="storage-error" class="notice" role="alert" hidden></p>
@@ -37,11 +37,8 @@
         <div class="card-head"><h2 id="practice-title">암송 연습</h2></div>
         <div class="exercise">
           <div class="exercise-head">
-            <div>
-              <p id="topic" class="muted topic"></p>
-              <h3 id="reference" tabindex="-1"></h3>
-              <p id="attempts" class="muted"></p>
-            </div>
+            <h3 id="question" tabindex="-1"></h3>
+            <p id="attempts" class="muted"></p>
           </div>
           <form id="practice-form">
             <label for="answer">암송 내용</label>
@@ -56,9 +53,8 @@
         </div>
       </section>
       <section class="card library" aria-labelledby="library-title">
-        <div class="card-head"><h2 id="library-title">암송 목록</h2></div>
-        <div class="series" id="series" role="group" aria-label="시리즈 선택"></div>
-        <div id="passages"></div>
+        <div class="card-head"><h2 id="library-title">문제 목록</h2></div>
+        <ol id="passages" class="passages" role="list"></ol>
       </section>
     </div>
     <footer>

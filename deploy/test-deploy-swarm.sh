@@ -426,7 +426,7 @@ grep -Fq "reverse_proxy starsnap-sns_web:3000" deploy/Caddyfile
 grep -Fq "(security_probe_guard)" deploy/Caddyfile
 grep -Fq "path */.env */.env.* */.env/* */.git */.git/* */wp-login.php */wp-login.php/* */phpmyadmin */phpmyadmin/*" deploy/Caddyfile
 grep -Fq 'header X-StarSnap-Edge-Guard "scanner-probe"' deploy/Caddyfile
-test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "7"
+test "$(grep -Fc $'\timport security_probe_guard' deploy/Caddyfile)" = "8"
 grep -Fq 'const securityProbeCases = [' deploy/verify-internal.mjs
 grep -Fq 'security probe guard' deploy/verify-internal.mjs
 grep -Fq '"x-starsnap-edge-guard"' deploy/verify-internal.mjs
@@ -450,10 +450,9 @@ grep -Fq 'caddyHttp("chat.starsnap.kr", "/api/health")' deploy/verify-internal.m
 grep -Fq 'caddyHttps("chat.starsnap.kr", "/")' deploy/verify-internal.mjs
 grep -Fq 'caddyHttps("chat.starsnap.kr", "/api/health")' deploy/verify-internal.mjs
 grep -Fq 'expectHeader(chatRoot, "x-starsnap-app-surface", "chat"' deploy/verify-internal.mjs
-if grep -Fq 'bible.starsnap.kr' deploy/Caddyfile; then
-  echo 'Retired Bible host found in the Caddyfile' >&2
-  exit 1
-fi
+bible_caddy_block="$(sed -n '/^bible\.starsnap\.kr {$/,/^}$/p' deploy/Caddyfile)"
+grep -Fq 'import security_probe_guard' <<<"$bible_caddy_block"
+grep -Fq 'reverse_proxy starsnap-memorize_web:8080' <<<"$bible_caddy_block"
 grep -Fq 'CADDY_ONLY must be true or false' deploy/deploy-swarm.sh
 grep -Fq 'Caddy-only deployment verified' deploy/deploy-swarm.sh
 grep -Fq 'caddy_only:' .github/workflows/container.yml

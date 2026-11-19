@@ -128,3 +128,8 @@ www.starsnap.kr {
 http://www.starsnap.kr {
 	redir https://starsnap.kr{uri} permanent
 }
+
+bible.starsnap.kr {
+	import security_probe_guard
+	reverse_proxy starsnap-memorize_web:8080
+}

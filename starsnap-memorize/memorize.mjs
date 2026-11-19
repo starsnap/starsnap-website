@@ -1,4 +1,7 @@
-export const storageKey = 'starsnap-memorize-v1';
+import { answerDigests } from './answer-digests.mjs';
+
+// Earlier records could be marked complete by hand.
+export const storageKey = 'starsnap-memorize-v2';
 
 const outline = {
   A: [
@@ -36,18 +39,13 @@ export function normalize(text) {
   return text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '');
 }
 
-export function grade(text, answer) {
-  const expected = Array.from(normalize(text));
-  const submitted = Array.from(normalize(answer));
-  const limit = Math.min(expected.length, submitted.length);
-  let prefix = 0;
-  while (prefix < limit && expected[prefix] === submitted[prefix]) prefix++;
-  return {
-    correct: expected.length === submitted.length && prefix === expected.length && prefix > 0,
-    prefix,
-    expectedLength: expected.length,
-    submittedLength: submitted.length,
-  };
+export async function grade(reference, answer) {
+  const expected = answerDigests[reference];
+  if (!expected) throw new Error(`Missing answer digest for ${reference}`);
+  const bytes = new TextEncoder().encode(normalize(answer));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return hex === expected;
 }
 
 export function loadProgress(storage) {
@@ -55,7 +53,7 @@ export function loadProgress(storage) {
   if (raw === null) return [];
   const entries = JSON.parse(raw);
   if (!Array.isArray(entries) || !entries.every((entry) =>
-    entry && allowedIds.has(entry.id) && typeof entry.text === 'string' &&
+    entry && allowedIds.has(entry.id) &&
     Number.isSafeInteger(entry.attempts) && entry.attempts >= 0 && typeof entry.completed === 'boolean'
   ) || new Set(entries.map(({ id }) => id)).size !== entries.length) throw new Error('Invalid memorization data');
   return entries;

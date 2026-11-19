@@ -24,7 +24,6 @@ p, h1, h2, h3, h4, dl, dd { margin: 0; }
 .masthead { display: flex; justify-content: space-between; align-items: center; min-height: 64px; gap: 16px; }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; }
 .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: white; background: var(--accent); font-size: 18px; }
-.brand-name { color: var(--muted); font-size: .88rem; font-weight: 700; letter-spacing: .03em; }
 .intro { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding-block: 48px 28px; }
 .intro h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 800; letter-spacing: -.065em; line-height: 1.2; }
 .intro p { margin-top: 10px; color: var(--muted); overflow-wrap: anywhere; }
@@ -79,7 +78,7 @@ textarea::placeholder { color: #66766b; }
 .result.retry, .notice { background: #f8eee2; color: #754021; }
 .notice { margin-bottom: 14px; }
 .result p { margin-top: 3px; }
-footer { color: var(--muted); font-size: .83rem; padding-block: 20px 28px; }
+main.shell { padding-bottom: 28px; }
 
 @media (max-width: 670px) {
   .shell { width: min(100% - 28px, 1060px); }

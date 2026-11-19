@@ -62,21 +62,21 @@ export function normalize(text) {
   return text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '');
 }
 
-function normalizeReference(text) {
-  return text.normalize('NFKC')
-    .replace(/\s+/g, '')
-    .replace(/_/g, ':')
-    .replace(/(\d)장/g, '$1:')
-    .replace(/(\d)절/g, '$1')
-    .replace(/[‐‑‒–—−~〜]/g, '-');
+function compactReferencePart(text) {
+  return text.normalize('NFKC').replace(/\s+/g, '');
 }
 
-function referenceMatches(expected, answer) {
-  const [book, location] = expected.split(' ');
-  const suffix = normalizeReference(location);
-  const actual = normalizeReference(answer);
-  const abbreviation = bookAbbreviations[book];
-  return actual === book + suffix || (abbreviation !== undefined && actual === abbreviation + suffix);
+function normalizeVerseRange(text) {
+  return compactReferencePart(text).replace(/(\d)절/g, '$1').replace(/[‐‑‒–—−~〜]/g, '-');
+}
+
+function referenceMatches(expected, { book, chapter, verses }) {
+  const [expectedBook, location] = expected.split(' ');
+  const [expectedChapter, expectedVerses] = location.split(':');
+  const actualBook = compactReferencePart(book);
+  const bookMatches = actualBook === expectedBook || actualBook === bookAbbreviations[expectedBook];
+  return bookMatches && compactReferencePart(chapter).replace(/장$/, '') === expectedChapter &&
+    normalizeVerseRange(verses) === normalizeVerseRange(expectedVerses);
 }
 
 export async function grade(reference, answer) {
@@ -94,7 +94,7 @@ export async function gradeQuestion(verse, answers) {
     majorTopic: normalize(answers.majorTopic) === normalize(verse.majorTopic),
     // Accept both the supplied B-11/12 wording and the published card title.
     topic: topic === normalize(verse.topic) || (verse.topic === '구원의 확인' && topic === '구원의확신'),
-    reference: referenceMatches(verse.reference, answers.reference),
+    reference: referenceMatches(verse.reference, answers),
     text: await grade(verse.reference, answers.text),
   };
 }

@@ -31,10 +31,10 @@ test('rejects incomplete, altered, and empty answers', async () => {
 test('grades both topics, the reference, and the passage independently', async () => {
   const verse = curriculum.B[0].entries[0];
   const text = '모든 사람이 죄를 범하였으매 하나님의 영광에 이르지 못하더니';
-  const answers = { majorTopic: '그리스도를전파함', topic: '모든 사람이 죄를 범함!', reference: '롬 3:23', text };
+  const answers = { majorTopic: '그리스도를전파함', topic: '모든 사람이 죄를 범함!', book: '롬', chapter: '3', verses: '23', text };
   assert.deepEqual(await gradeQuestion(verse, answers), { majorTopic: true, topic: true, reference: true, text: true });
   assert.deepEqual(await gradeQuestion(verse, { ...answers, topic: '죄의 형벌' }), { majorTopic: true, topic: false, reference: true, text: true });
-  assert.deepEqual(await gradeQuestion(verse, { ...answers, reference: '롬 32:3' }), { majorTopic: true, topic: true, reference: false, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, chapter: '32', verses: '3' }), { majorTopic: true, topic: true, reference: false, text: true });
   assert.deepEqual(await gradeQuestion(verse, { ...answers, majorTopic: '새로운 삶', text: '다른 본문' }), { majorTopic: false, topic: true, reference: true, text: false });
   const finalB = curriculum.B[5].entries[0];
   for (const topic of ['구원의 확인', '구원의 확신']) {
@@ -42,23 +42,23 @@ test('grades both topics, the reference, and the passage independently', async (
   }
 });
 
-test('accepts common reference formats and requires the correct book and full range', async () => {
+test('checks the separate book, chapter, and verse inputs', async () => {
   const single = curriculum.B[0].entries[0];
   const range = curriculum.B[3].entries[0];
   const matthew = curriculum.A[4].entries[0];
-  const answers = { majorTopic: '', topic: '', reference: '', text: '' };
+  const answers = { majorTopic: '', topic: '', text: '' };
   const cases = [
-    [single, '로마서 3장 23절', true],
-    [single, '롬 ３：２３', true],
-    [single, '히 3:23', false],
-    [single, '롬323', false],
-    [matthew, '마태복음 18_20', true],
-    [range, '엡 2:8~9', true],
-    [range, '에베소서 2:8', false],
-    [range, '에베소서 2:8-10', false],
+    [single, '로마서', '3장', '23절', true],
+    [single, '롬', '３', '２３', true],
+    [single, '히', '3', '23', false],
+    [single, '롬', '23', '3', false],
+    [matthew, '마태복음', '18', '20', true],
+    [range, '엡', '2', '8절~9절', true],
+    [range, '에베소서', '2', '8', false],
+    [range, '에베소서', '2', '8-10', false],
   ];
-  for (const [verse, reference, expected] of cases) {
-    assert.equal((await gradeQuestion(verse, { ...answers, reference })).reference, expected, reference);
+  for (const [verse, book, chapter, verses, expected] of cases) {
+    assert.equal((await gradeQuestion(verse, { ...answers, book, chapter, verses })).reference, expected, `${book} ${chapter}:${verses}`);
   }
 });
 

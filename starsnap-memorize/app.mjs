@@ -4,7 +4,9 @@ const byId = (id) => document.getElementById(id);
 const fields = {
   majorTopic: byId('major-topic'),
   topic: byId('topic-answer'),
-  reference: byId('reference-answer'),
+  book: byId('book-answer'),
+  chapter: byId('chapter-answer'),
+  verses: byId('verses-answer'),
   text: byId('answer'),
 };
 const fieldLabels = { majorTopic: '대주제', topic: '소주제', reference: '장절', text: '암송 내용' };

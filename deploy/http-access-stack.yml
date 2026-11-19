@@ -29,7 +29,7 @@ services:
 
 configs:
   forwarder:
-    name: starsnap-http-access-forwarder-20261119
+    name: starsnap-http-access-forwarder-20261119-v2
     file: ./http-access-forwarder.py
 
 secrets:

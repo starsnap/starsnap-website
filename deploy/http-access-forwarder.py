@@ -49,7 +49,11 @@ def access_payload(record):
         'statusCode': str(status),
         'ipAddress': ip,
         'responseTimeMs': duration * 1000,
-        'requestedAt': datetime.fromtimestamp(float(record['ts']) - duration, timezone.utc).isoformat(),
+        'requestedAt': datetime.fromtimestamp(float(record['ts']) - duration, timezone.utc).isoformat().replace('+00:00', 'Z'),
+        'requestHeaders': '',
+        'requestBody': '',
+        'responseHeaders': '',
+        'responseBody': '',
     }
 
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { curriculum, grade, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
+import { curriculum, grade, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
 import { answerDigests } from './answer-digests.mjs';
 
 test('contains both 12-verse series in their supplied order', () => {
@@ -11,6 +11,8 @@ test('contains both 12-verse series in their supplied order', () => {
   assert.deepEqual(b, ['로마서 3:23', '이사야 53:6', '로마서 6:23', '히브리서 9:27', '로마서 5:8', '베드로전서 3:18', '에베소서 2:8–9', '디도서 3:5', '요한복음 1:12', '요한계시록 3:20', '요한일서 5:13', '요한복음 5:24']);
   assert.deepEqual(Object.keys(answerDigests).sort(), [...a, ...b].sort());
   assert(Object.values(answerDigests).every((digest) => /^[0-9a-f]{64}$/.test(digest)));
+  assert(curriculum.A.every(({ entries }) => entries.every(({ majorTopic }) => majorTopic === '새로운 삶')));
+  assert(curriculum.B.every(({ entries }) => entries.every(({ majorTopic }) => majorTopic === '그리스도를 전파함')));
 });
 
 test('checks the reference with different Korean spacing, punctuation and Unicode forms', async () => {
@@ -26,15 +28,30 @@ test('rejects incomplete, altered, and empty answers', async () => {
   assert.equal(await grade('로마서 3:23', '?!'), false);
 });
 
-test('keeps previous manual checks separate and restores only new records', () => {
+test('grades the two topics separately from the passage', async () => {
+  const verse = curriculum.B[0].entries[0];
+  const text = '모든 사람이 죄를 범하였으매 하나님의 영광에 이르지 못하더니';
+  const answers = { majorTopic: '그리스도를전파함', topic: '모든 사람이 죄를 범함!', text };
+  assert.deepEqual(await gradeQuestion(verse, answers), { majorTopic: true, topic: true, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, topic: '죄의 형벌' }), { majorTopic: true, topic: false, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, majorTopic: '새로운 삶', text: '다른 본문' }), { majorTopic: false, topic: true, text: false });
+  const finalB = curriculum.B[5].entries[0];
+  for (const topic of ['구원의 확인', '구원의 확신']) {
+    assert.equal((await gradeQuestion(finalB, { ...answers, topic })).topic, true);
+  }
+});
+
+test('restores topic-checked records and keeps previous records separate', () => {
   const legacy = '[{"id":"B-1","text":"예시 문장","attempts":0,"completed":true}]';
-  const items = new Map([['starsnap-memorize-v1', legacy]]);
+  const bodyOnly = '[{"id":"B-1","attempts":1,"completed":true}]';
+  const items = new Map([['starsnap-memorize-v1', legacy], ['starsnap-memorize-v2', bodyOnly]]);
   const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
   assert.deepEqual(loadProgress(storage), []);
   const saved = [{ id: 'B-1', attempts: 1, completed: true }];
   saveProgress(storage, saved);
   assert.deepEqual(loadProgress(storage), saved);
   assert.equal(items.get('starsnap-memorize-v1'), legacy);
+  assert.equal(items.get('starsnap-memorize-v2'), bodyOnly);
   items.set(storageKey, '[{}]');
   assert.throws(() => loadProgress(storage), /Invalid memorization data/);
 });

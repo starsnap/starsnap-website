@@ -1,7 +1,12 @@
-import { curriculum, grade, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
+import { curriculum, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
 
 const byId = (id) => document.getElementById(id);
-const answer = byId('answer');
+const fields = {
+  majorTopic: byId('major-topic'),
+  topic: byId('topic-answer'),
+  text: byId('answer'),
+};
+const fieldLabels = { majorTopic: '대주제', topic: '소주제', text: '암송 내용' };
 const result = byId('result');
 const retry = byId('retry');
 const submit = byId('submit');
@@ -46,7 +51,7 @@ function persist(id, update) {
 }
 
 function resetAnswer() {
-  answer.value = '';
+  for (const field of Object.values(fields)) field.value = '';
   result.replaceChildren();
   retry.hidden = true;
 }
@@ -107,21 +112,22 @@ byId('practice-form').addEventListener('submit', async (event) => {
   if (submit.disabled) return;
   const questionIndex = selectedIndex;
   const verse = allEntries[questionIndex];
-  const submitted = answer.value;
-  if (!normalize(submitted)) {
-    showResult('암송 내용을 입력해 주세요.', '입력한 내용에 채점할 글자가 없습니다.', false);
+  const submitted = Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value]));
+  if (Object.values(submitted).some(value => !normalize(value))) {
+    showResult('세 항목을 모두 입력해 주세요.', '대주제, 소주제, 암송 내용을 채점합니다.', false);
     return;
   }
   submit.disabled = true;
   try {
-    const correct = await grade(verse.reference, submitted);
+    const scores = await gradeQuestion(verse, submitted);
+    const correct = Object.values(scores).every(Boolean);
     const saved = persist(verse.id, (entry) => ({
       attempts: entry.attempts + 1,
       completed: entry.completed || correct,
     }));
     render();
-    if (questionIndex !== selectedIndex || submitted !== answer.value) return;
-    const detail = correct ? '개역한글판 본문과 일치합니다.' : '개역한글판 본문과 다른 부분이 있습니다.';
+    if (questionIndex !== selectedIndex || Object.keys(fields).some(key => fields[key].value !== submitted[key])) return;
+    const detail = Object.entries(scores).map(([key, match]) => `${fieldLabels[key]} ${match ? '일치' : '다시 확인'}`).join(' · ');
     showResult(correct ? '암송 성공' : '다시 연습해 보세요', saved ? detail : `${detail} 결과를 저장하지 못했습니다.`, correct);
     retry.hidden = false;
   } catch {
@@ -133,7 +139,7 @@ byId('practice-form').addEventListener('submit', async (event) => {
 
 retry.addEventListener('click', () => {
   resetAnswer();
-  answer.focus();
+  fields.majorTopic.focus();
 });
 window.addEventListener('storage', (event) => {
   if (event.key === storageKey || event.key === null) {

@@ -1,7 +1,12 @@
 import { answerDigests } from './answer-digests.mjs';
 
-// Earlier records could be marked complete by hand.
-export const storageKey = 'starsnap-memorize-v2';
+// Earlier completion records did not verify topics.
+export const storageKey = 'starsnap-memorize-v3';
+
+const majorTopics = {
+  A: '새로운 삶',
+  B: '그리스도를 전파함',
+};
 
 const outline = {
   A: [
@@ -28,6 +33,7 @@ export const curriculum = Object.fromEntries(Object.entries(outline).map(([serie
     entries: references.map((reference, offset) => ({
       id: `${series}-${index * 2 + offset + 1}`,
       reference,
+      majorTopic: majorTopics[series],
       topic,
     })),
   })),
@@ -46,6 +52,16 @@ export async function grade(reference, answer) {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
   return hex === expected;
+}
+
+export async function gradeQuestion(verse, answers) {
+  const topic = normalize(answers.topic);
+  return {
+    majorTopic: normalize(answers.majorTopic) === normalize(verse.majorTopic),
+    // Accept both the supplied B-11/12 wording and the published card title.
+    topic: topic === normalize(verse.topic) || (verse.topic === '구원의 확인' && topic === '구원의확신'),
+    text: await grade(verse.reference, answers.text),
+  };
 }
 
 export function loadProgress(storage) {

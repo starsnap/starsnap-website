@@ -15,7 +15,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; min-width: 270px; line-height: 1.55; }
-button, textarea { font: inherit; }
+button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 3px solid #518f77; outline-offset: 3px; }
 p, h1, h2, h3, h4, dl, dd { margin: 0; }
@@ -56,7 +56,10 @@ p, h1, h2, h3, h4, dl, dd { margin: 0; }
 .exercise-head h3 { letter-spacing: -.035em; font-size: clamp(1.45rem, 4vw, 2rem); overflow-wrap: anywhere; }
 .muted { color: var(--muted); font-size: .84rem; }
 label { display: block; margin-bottom: 6px; font-size: .92rem; font-weight: 750; }
-textarea { display: block; width: 100%; min-height: 120px; resize: vertical; border: 1px solid #c6d1c6; border-radius: 9px; background: #fff; color: var(--ink); padding: 10px 12px; }
+.topic-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin-bottom: 14px; }
+input, textarea { display: block; width: 100%; border: 1px solid #c6d1c6; border-radius: 9px; background: #fff; color: var(--ink); padding: 10px 12px; }
+input { min-height: 44px; }
+textarea { min-height: 120px; resize: vertical; }
 textarea::placeholder { color: #66766b; }
 .hint { margin-top: 6px; }
 .exercise-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

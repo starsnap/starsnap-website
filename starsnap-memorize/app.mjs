@@ -86,7 +86,10 @@ function render() {
   byId('passed').textContent = passed;
   byId('pending').textContent = allEntries.length - passed;
 
-  byId('passages').replaceChildren(...allEntries.map(renderQuestion));
+  for (const series of Object.keys(curriculum)) {
+    const buttons = allEntries.flatMap((entry, index) => entry.series === series ? [renderQuestion(entry, index)] : []);
+    byId(`passages-${series}`).replaceChildren(...buttons);
+  }
 
   const verse = allEntries[selectedIndex];
   const saved = record(verse.id);

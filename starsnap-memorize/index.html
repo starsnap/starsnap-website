@@ -83,9 +83,16 @@
           <div id="result" class="result" role="status" aria-live="polite"></div>
         </div>
       </section>
-      <section class="card library" aria-labelledby="library-title">
+      <section id="passages" class="card library" aria-labelledby="library-title">
         <div class="card-head"><h2 id="library-title">문제 목록</h2></div>
-        <ol id="passages" class="passages" role="list"></ol>
+        <section class="passage-group" aria-labelledby="series-a-title">
+          <h3 id="series-a-title">A</h3>
+          <ol id="passages-A" class="passages" role="list"></ol>
+        </section>
+        <section class="passage-group" aria-labelledby="series-b-title">
+          <h3 id="series-b-title">B</h3>
+          <ol id="passages-B" class="passages" role="list"></ol>
+        </section>
       </section>
     </div>
     <footer>

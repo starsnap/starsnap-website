@@ -20,7 +20,7 @@
     <div class="intro">
       <div>
         <h1>암송 체크</h1>
-        <p>암송 코드를 보고 대주제, 소주제, 말씀을 적어 보세요.</p>
+        <p>암송 코드를 보고 대주제, 소주제, 장절, 말씀을 적어 보세요.</p>
       </div>
     </div>
 
@@ -50,10 +50,14 @@
                 <label for="topic-answer">소주제</label>
                 <input id="topic-answer" type="text" maxlength="80" required spellcheck="false" autocomplete="off" autocorrect="off">
               </div>
+              <div class="reference-field">
+                <label for="reference-answer">장절</label>
+                <input id="reference-answer" type="text" maxlength="60" required placeholder="책 이름 장:절" spellcheck="false" autocomplete="off" autocorrect="off">
+              </div>
             </div>
             <label for="answer">암송 내용</label>
             <textarea id="answer" rows="5" maxlength="2000" required aria-describedby="answer-hint" placeholder="기억나는 대로 입력하세요." spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
-            <p class="muted hint" id="answer-hint">본문은 개역한글판 기준입니다. 띄어쓰기와 문장부호는 채점에서 제외합니다.</p>
+            <p class="muted hint" id="answer-hint">본문은 개역한글판 기준입니다. 대주제·소주제·본문은 띄어쓰기와 문장부호를 채점에서 제외합니다.</p>
             <div class="exercise-actions">
               <button type="submit" id="submit" class="button primary">채점하기</button>
               <button type="button" id="retry" class="button secondary" hidden>다시 입력</button>

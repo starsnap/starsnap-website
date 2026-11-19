@@ -57,6 +57,7 @@ p, h1, h2, h3, h4, dl, dd { margin: 0; }
 .muted { color: var(--muted); font-size: .84rem; }
 label { display: block; margin-bottom: 6px; font-size: .92rem; font-weight: 750; }
 .topic-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin-bottom: 14px; }
+.reference-field { grid-column: 1 / -1; }
 input, textarea { display: block; width: 100%; border: 1px solid #c6d1c6; border-radius: 9px; background: #fff; color: var(--ink); padding: 10px 12px; }
 input { min-height: 44px; }
 textarea { min-height: 120px; resize: vertical; }

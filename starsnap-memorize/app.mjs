@@ -4,9 +4,10 @@ const byId = (id) => document.getElementById(id);
 const fields = {
   majorTopic: byId('major-topic'),
   topic: byId('topic-answer'),
+  reference: byId('reference-answer'),
   text: byId('answer'),
 };
-const fieldLabels = { majorTopic: '대주제', topic: '소주제', text: '암송 내용' };
+const fieldLabels = { majorTopic: '대주제', topic: '소주제', reference: '장절', text: '암송 내용' };
 const result = byId('result');
 const retry = byId('retry');
 const submit = byId('submit');
@@ -114,7 +115,7 @@ byId('practice-form').addEventListener('submit', async (event) => {
   const verse = allEntries[questionIndex];
   const submitted = Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value]));
   if (Object.values(submitted).some(value => !normalize(value))) {
-    showResult('세 항목을 모두 입력해 주세요.', '대주제, 소주제, 암송 내용을 채점합니다.', false);
+    showResult('네 항목을 모두 입력해 주세요.', '대주제, 소주제, 장절, 암송 내용을 채점합니다.', false);
     return;
   }
   submit.disabled = true;

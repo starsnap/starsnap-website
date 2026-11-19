@@ -1,7 +1,7 @@
 import { answerDigests } from './answer-digests.mjs';
 
-// Earlier completion records did not verify topics.
-export const storageKey = 'starsnap-memorize-v3';
+// Earlier completion records did not verify the verse reference.
+export const storageKey = 'starsnap-memorize-v4';
 
 const majorTopics = {
   A: '새로운 삶',
@@ -40,9 +40,43 @@ export const curriculum = Object.fromEntries(Object.entries(outline).map(([serie
 ]));
 
 const allowedIds = new Set(Object.values(curriculum).flat().flatMap(({ entries }) => entries.map(({ id }) => id)));
+const bookAbbreviations = {
+  고린도후서: '고후',
+  갈라디아서: '갈',
+  로마서: '롬',
+  요한복음: '요',
+  디모데후서: '딤후',
+  여호수아: '수',
+  빌립보서: '빌',
+  마태복음: '마',
+  히브리서: '히',
+  이사야: '사',
+  베드로전서: '벧전',
+  에베소서: '엡',
+  디도서: '딛',
+  요한계시록: '계',
+  요한일서: '요일',
+};
 
 export function normalize(text) {
   return text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '');
+}
+
+function normalizeReference(text) {
+  return text.normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/_/g, ':')
+    .replace(/(\d)장/g, '$1:')
+    .replace(/(\d)절/g, '$1')
+    .replace(/[‐‑‒–—−~〜]/g, '-');
+}
+
+function referenceMatches(expected, answer) {
+  const [book, location] = expected.split(' ');
+  const suffix = normalizeReference(location);
+  const actual = normalizeReference(answer);
+  const abbreviation = bookAbbreviations[book];
+  return actual === book + suffix || (abbreviation !== undefined && actual === abbreviation + suffix);
 }
 
 export async function grade(reference, answer) {
@@ -60,6 +94,7 @@ export async function gradeQuestion(verse, answers) {
     majorTopic: normalize(answers.majorTopic) === normalize(verse.majorTopic),
     // Accept both the supplied B-11/12 wording and the published card title.
     topic: topic === normalize(verse.topic) || (verse.topic === '구원의 확인' && topic === '구원의확신'),
+    reference: referenceMatches(verse.reference, answers.reference),
     text: await grade(verse.reference, answers.text),
   };
 }

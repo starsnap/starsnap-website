@@ -5,7 +5,8 @@ const fields = {
   topic: byId('topic-answer'),
   book: byId('book-answer'),
   chapter: byId('chapter-answer'),
-  verses: byId('verses-answer'),
+  startVerse: byId('verse-start-answer'),
+  endVerse: byId('verse-end-answer'),
   text: byId('answer'),
 };
 const fieldLabels = { topic: '소주제', reference: '장절', text: '암송 내용' };
@@ -149,13 +150,20 @@ majorForm.addEventListener('submit', (event) => {
   if (saved) fields.topic.focus();
 });
 
+for (const field of [fields.chapter, fields.startVerse, fields.endVerse]) {
+  field.addEventListener('input', () => {
+    const digits = field.value.normalize('NFKC').replace(/[^0-9]/g, '');
+    if (field.value !== digits) field.value = digits;
+  });
+}
+
 byId('practice-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (submit.disabled) return;
   const questionIndex = selectedIndex;
   const verse = allEntries[questionIndex];
   const submitted = Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value]));
-  if (Object.values(submitted).some(value => !normalize(value))) {
+  if (Object.entries(fields).some(([key, field]) => field.required && !normalize(submitted[key]))) {
     showResult('세 항목을 모두 입력해 주세요.', '소주제, 장절, 암송 내용을 채점합니다.', false);
     return;
   }

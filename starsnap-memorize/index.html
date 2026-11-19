@@ -58,17 +58,21 @@
                 <input id="topic-answer" type="text" maxlength="80" required spellcheck="false" autocomplete="off" autocorrect="off">
               </div>
               <div class="reference-fields" role="group" aria-label="장절">
-                <div>
+                <div class="book-field">
                   <label for="book-answer">책 이름</label>
                   <input id="book-answer" type="text" maxlength="32" required spellcheck="false" autocomplete="off" autocorrect="off">
                 </div>
                 <div>
                   <label for="chapter-answer">장</label>
-                  <input id="chapter-answer" type="text" inputmode="numeric" maxlength="4" required autocomplete="off">
+                  <input id="chapter-answer" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="3" required autocomplete="off">
                 </div>
                 <div>
-                  <label for="verses-answer">절</label>
-                  <input id="verses-answer" type="text" maxlength="16" required placeholder="범위 가능" spellcheck="false" autocomplete="off" autocorrect="off">
+                  <label for="verse-start-answer">절</label>
+                  <input id="verse-start-answer" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="3" required autocomplete="off">
+                </div>
+                <div>
+                  <label for="verse-end-answer">끝 절</label>
+                  <input id="verse-end-answer" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="3" placeholder="선택" autocomplete="off">
                 </div>
               </div>
             </div>

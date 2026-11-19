@@ -66,17 +66,14 @@ function compactReferencePart(text) {
   return text.normalize('NFKC').replace(/\s+/g, '');
 }
 
-function normalizeVerseRange(text) {
-  return compactReferencePart(text).replace(/(\d)절/g, '$1').replace(/[‐‑‒–—−~〜]/g, '-');
-}
-
-function referenceMatches(expected, { book, chapter, verses }) {
+function referenceMatches(expected, { book, chapter, startVerse, endVerse }) {
   const [expectedBook, location] = expected.split(' ');
   const [expectedChapter, expectedVerses] = location.split(':');
+  const [expectedStart, expectedEnd = ''] = expectedVerses.split('–');
   const actualBook = compactReferencePart(book);
   const bookMatches = actualBook === expectedBook || actualBook === bookAbbreviations[expectedBook];
-  return bookMatches && compactReferencePart(chapter).replace(/장$/, '') === expectedChapter &&
-    normalizeVerseRange(verses) === normalizeVerseRange(expectedVerses);
+  return bookMatches && compactReferencePart(chapter) === expectedChapter &&
+    compactReferencePart(startVerse) === expectedStart && compactReferencePart(endVerse) === expectedEnd;
 }
 
 export async function grade(reference, answer) {

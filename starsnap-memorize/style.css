@@ -62,7 +62,11 @@ label { display: block; margin-bottom: 6px; font-size: .92rem; font-weight: 750;
 .major-topic { border-bottom: 1px solid var(--line); margin-bottom: 14px; padding-bottom: 12px; }
 .major-topic-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .answer-details { display: grid; gap: 12px; margin-bottom: 14px; }
-.reference-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 8px; }
+.reference-fields { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 420px) {
+  .reference-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .book-field { grid-column: 1 / -1; }
+}
 input, textarea { display: block; width: 100%; border: 1px solid #c6d1c6; border-radius: 9px; background: #fff; color: var(--ink); padding: 10px 12px; }
 input { min-height: 44px; }
 textarea { min-height: 120px; resize: vertical; }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { curriculum, grade, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
+import { curriculum, grade, gradeMajorTopic, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
 import { answerDigests } from './answer-digests.mjs';
 
 test('contains both 12-verse series in their supplied order', () => {
@@ -11,8 +11,15 @@ test('contains both 12-verse series in their supplied order', () => {
   assert.deepEqual(b, ['로마서 3:23', '이사야 53:6', '로마서 6:23', '히브리서 9:27', '로마서 5:8', '베드로전서 3:18', '에베소서 2:8–9', '디도서 3:5', '요한복음 1:12', '요한계시록 3:20', '요한일서 5:13', '요한복음 5:24']);
   assert.deepEqual(Object.keys(answerDigests).sort(), [...a, ...b].sort());
   assert(Object.values(answerDigests).every((digest) => /^[0-9a-f]{64}$/.test(digest)));
-  assert(curriculum.A.every(({ entries }) => entries.every(({ majorTopic }) => majorTopic === '새로운 삶')));
-  assert(curriculum.B.every(({ entries }) => entries.every(({ majorTopic }) => majorTopic === '그리스도를 전파함')));
+  assert(curriculum.A.every(({ entries }) => entries.every(({ series }) => series === 'A')));
+  assert(curriculum.B.every(({ entries }) => entries.every(({ series }) => series === 'B')));
+});
+
+test('checks each series major topic independently', () => {
+  assert.equal(gradeMajorTopic('A', '새로운삶!'), true);
+  assert.equal(gradeMajorTopic('B', '그리스도를 전파함'), true);
+  assert.equal(gradeMajorTopic('B', '새로운 삶'), false);
+  assert.equal(gradeMajorTopic('C', '새로운 삶'), false);
 });
 
 test('checks the reference with different Korean spacing, punctuation and Unicode forms', async () => {
@@ -28,14 +35,14 @@ test('rejects incomplete, altered, and empty answers', async () => {
   assert.equal(await grade('로마서 3:23', '?!'), false);
 });
 
-test('grades both topics, the reference, and the passage independently', async () => {
+test('grades the minor topic, reference, and passage independently of the major topic', async () => {
   const verse = curriculum.B[0].entries[0];
   const text = '모든 사람이 죄를 범하였으매 하나님의 영광에 이르지 못하더니';
-  const answers = { majorTopic: '그리스도를전파함', topic: '모든 사람이 죄를 범함!', book: '롬', chapter: '3', verses: '23', text };
-  assert.deepEqual(await gradeQuestion(verse, answers), { majorTopic: true, topic: true, reference: true, text: true });
-  assert.deepEqual(await gradeQuestion(verse, { ...answers, topic: '죄의 형벌' }), { majorTopic: true, topic: false, reference: true, text: true });
-  assert.deepEqual(await gradeQuestion(verse, { ...answers, chapter: '32', verses: '3' }), { majorTopic: true, topic: true, reference: false, text: true });
-  assert.deepEqual(await gradeQuestion(verse, { ...answers, majorTopic: '새로운 삶', text: '다른 본문' }), { majorTopic: false, topic: true, reference: true, text: false });
+  const answers = { topic: '모든 사람이 죄를 범함!', book: '롬', chapter: '3', verses: '23', text };
+  assert.deepEqual(await gradeQuestion(verse, answers), { topic: true, reference: true, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, topic: '죄의 형벌' }), { topic: false, reference: true, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, chapter: '32', verses: '3' }), { topic: true, reference: false, text: true });
+  assert.deepEqual(await gradeQuestion(verse, { ...answers, text: '다른 본문' }), { topic: true, reference: true, text: false });
   const finalB = curriculum.B[5].entries[0];
   for (const topic of ['구원의 확인', '구원의 확신']) {
     assert.equal((await gradeQuestion(finalB, { ...answers, topic })).topic, true);
@@ -46,7 +53,7 @@ test('checks the separate book, chapter, and verse inputs', async () => {
   const single = curriculum.B[0].entries[0];
   const range = curriculum.B[3].entries[0];
   const matthew = curriculum.A[4].entries[0];
-  const answers = { majorTopic: '', topic: '', text: '' };
+  const answers = { topic: '', text: '' };
   const cases = [
     [single, '로마서', '3장', '23절', true],
     [single, '롬', '３', '２３', true],
@@ -62,21 +69,23 @@ test('checks the separate book, chapter, and verse inputs', async () => {
   }
 });
 
-test('restores reference-checked records and keeps previous records separate', () => {
-  const legacy = '[{"id":"B-1","text":"예시 문장","attempts":0,"completed":true}]';
-  const bodyOnly = '[{"id":"B-1","attempts":1,"completed":true}]';
-  const topicChecked = '[{"id":"A-1","attempts":2,"completed":true}]';
-  const items = new Map([
-    ['starsnap-memorize-v1', legacy], ['starsnap-memorize-v2', bodyOnly], ['starsnap-memorize-v3', topicChecked],
-  ]);
+test('restores past completions and recognizes their series major topics', () => {
+  const previous = [
+    { id: 'A-1', attempts: 2, completed: true },
+    { id: 'A-2', attempts: 1, completed: true },
+    { id: 'B-1', attempts: 3, completed: false },
+  ];
+  const items = new Map([['starsnap-memorize-v3', JSON.stringify(previous)]]);
   const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
-  assert.deepEqual(loadProgress(storage), []);
-  const saved = [{ id: 'B-1', attempts: 1, completed: true }];
+  assert.deepEqual(loadProgress(storage), { entries: [], completedSeries: [] });
+  items.set('starsnap-memorize-v4', JSON.stringify(previous));
+  assert.deepEqual(loadProgress(storage), { entries: previous, completedSeries: ['A'] });
+  const saved = { entries: previous, completedSeries: ['A', 'B'] };
   saveProgress(storage, saved);
   assert.deepEqual(loadProgress(storage), saved);
-  assert.equal(items.get('starsnap-memorize-v1'), legacy);
-  assert.equal(items.get('starsnap-memorize-v2'), bodyOnly);
-  assert.equal(items.get('starsnap-memorize-v3'), topicChecked);
+  assert.equal(items.get('starsnap-memorize-v4'), JSON.stringify(previous));
   items.set(storageKey, '[{}]');
+  assert.throws(() => loadProgress(storage), /Invalid memorization data/);
+  items.set(storageKey, JSON.stringify({ entries: [], completedSeries: ['C'] }));
   assert.throws(() => loadProgress(storage), /Invalid memorization data/);
 });

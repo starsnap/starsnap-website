@@ -1,7 +1,7 @@
 import { answerDigests } from './answer-digests.mjs';
 
-// Earlier completion records did not verify the verse reference.
-export const storageKey = 'starsnap-memorize-v4';
+export const storageKey = 'starsnap-memorize-v5';
+const previousStorageKey = 'starsnap-memorize-v4';
 
 const majorTopics = {
   A: '새로운 삶',
@@ -33,7 +33,7 @@ export const curriculum = Object.fromEntries(Object.entries(outline).map(([serie
     entries: references.map((reference, offset) => ({
       id: `${series}-${index * 2 + offset + 1}`,
       reference,
-      majorTopic: majorTopics[series],
+      series,
       topic,
     })),
   })),
@@ -91,7 +91,6 @@ export async function grade(reference, answer) {
 export async function gradeQuestion(verse, answers) {
   const topic = normalize(answers.topic);
   return {
-    majorTopic: normalize(answers.majorTopic) === normalize(verse.majorTopic),
     // Accept both the supplied B-11/12 wording and the published card title.
     topic: topic === normalize(verse.topic) || (verse.topic === '구원의 확인' && topic === '구원의확신'),
     reference: referenceMatches(verse.reference, answers),
@@ -99,15 +98,33 @@ export async function gradeQuestion(verse, answers) {
   };
 }
 
-export function loadProgress(storage) {
-  const raw = storage.getItem(storageKey);
-  if (raw === null) return [];
-  const entries = JSON.parse(raw);
+export function gradeMajorTopic(series, answer) {
+  const expected = majorTopics[series];
+  return typeof expected === 'string' && normalize(answer) === normalize(expected);
+}
+
+function checkEntries(entries) {
   if (!Array.isArray(entries) || !entries.every((entry) =>
     entry && allowedIds.has(entry.id) &&
     Number.isSafeInteger(entry.attempts) && entry.attempts >= 0 && typeof entry.completed === 'boolean'
   ) || new Set(entries.map(({ id }) => id)).size !== entries.length) throw new Error('Invalid memorization data');
-  return entries;
+}
+
+export function loadProgress(storage) {
+  const raw = storage.getItem(storageKey);
+  if (raw === null) {
+    const entries = JSON.parse(storage.getItem(previousStorageKey) ?? '[]');
+    checkEntries(entries);
+    // A previous completion already included the correct major topic.
+    const completedSeries = [...new Set(entries.filter(entry => entry.completed).map(entry => entry.id.split('-')[0]))];
+    return { entries, completedSeries };
+  }
+
+  const { entries, completedSeries } = JSON.parse(raw) ?? {};
+  checkEntries(entries);
+  if (!Array.isArray(completedSeries) || !completedSeries.every(series => Object.keys(majorTopics).includes(series)) ||
+    new Set(completedSeries).size !== completedSeries.length) throw new Error('Invalid memorization data');
+  return { entries, completedSeries };
 }
 
 export function saveProgress(storage, progress) {

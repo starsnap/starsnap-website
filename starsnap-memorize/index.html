@@ -20,7 +20,7 @@
     <div class="intro">
       <div>
         <h1>암송 체크</h1>
-        <p>암송 코드를 보고 대주제, 소주제, 장절, 말씀을 적어 보세요.</p>
+        <p>대주제를 한 번 확인하고, 암송 코드마다 소주제, 장절, 말씀을 적어 보세요.</p>
       </div>
     </div>
 
@@ -40,12 +40,19 @@
             <h3 id="question" tabindex="-1"></h3>
             <p id="attempts" class="muted"></p>
           </div>
-          <form id="practice-form">
-            <div class="topic-fields">
-              <div>
-                <label for="major-topic">대주제</label>
-                <input id="major-topic" type="text" maxlength="80" required spellcheck="false" autocomplete="off" autocorrect="off">
+          <div class="major-topic">
+            <form id="major-topic-form" hidden>
+              <label for="major-topic">대주제</label>
+              <div class="major-topic-input">
+                <input id="major-topic" type="text" maxlength="80" required spellcheck="false" autocomplete="off" autocorrect="off" aria-describedby="major-topic-help">
+                <button type="submit" class="button secondary">대주제 채점</button>
               </div>
+              <p class="muted hint" id="major-topic-help">A와 B에서 각각 한 번만 맞히면 됩니다.</p>
+            </form>
+            <p class="muted hint" id="major-topic-status" role="status"></p>
+          </div>
+          <form id="practice-form">
+            <div class="answer-details">
               <div>
                 <label for="topic-answer">소주제</label>
                 <input id="topic-answer" type="text" maxlength="80" required spellcheck="false" autocomplete="off" autocorrect="off">
@@ -67,7 +74,7 @@
             </div>
             <label for="answer">암송 내용</label>
             <textarea id="answer" rows="5" maxlength="2000" required aria-describedby="answer-hint" placeholder="기억나는 대로 입력하세요." spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
-            <p class="muted hint" id="answer-hint">본문은 개역한글판 기준입니다. 대주제·소주제·본문은 띄어쓰기와 문장부호를 채점에서 제외합니다.</p>
+            <p class="muted hint" id="answer-hint">본문은 개역한글판 기준입니다. 소주제와 본문은 띄어쓰기와 문장부호를 채점에서 제외합니다.</p>
             <div class="exercise-actions">
               <button type="submit" id="submit" class="button primary">채점하기</button>
               <button type="button" id="retry" class="button secondary" hidden>다시 입력</button>

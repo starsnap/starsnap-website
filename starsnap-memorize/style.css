@@ -45,7 +45,7 @@ p, h1, h2, h3, h4, dl, dd { margin: 0; }
 .card { min-width: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 15px; }
 .card-head { display: flex; align-items: center; border-bottom: 1px solid var(--line); padding: 17px 21px; }
 .card-head h2 { font-size: 1.06rem; letter-spacing: -.025em; }
-.passages { display: grid; grid-template-columns: repeat(auto-fit, minmax(46px, 1fr)); gap: 8px; margin: 0; padding: 16px; list-style: none; }
+.passages { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 8px; margin: 0; padding: 16px; list-style: none; }
 .passage { position: relative; width: 100%; min-height: 44px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-weight: 750; font-variant-numeric: tabular-nums; }
 .passage:hover { background: #f6f8f4; }
 .passage[aria-current="true"] { background: var(--tint); border-color: var(--accent); }

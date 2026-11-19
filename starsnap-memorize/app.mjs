@@ -66,20 +66,20 @@ function render() {
 
   byId('passages').replaceChildren(...allEntries.map(renderQuestion));
 
-  const saved = record(allEntries[selectedIndex].id);
-  byId('question').textContent = `문제 ${selectedIndex + 1}`;
+  const code = allEntries[selectedIndex].id;
+  const saved = record(code);
+  byId('question').textContent = code;
   byId('attempts').textContent = saved.attempts ? `입력 연습 ${saved.attempts}회` : '';
 }
 
 function renderQuestion(entry, index) {
   const item = document.createElement('li');
   const button = document.createElement('button');
-  const number = index + 1;
   const done = record(entry.id).completed;
   button.type = 'button';
   button.className = 'passage';
-  button.textContent = number;
-  button.setAttribute('aria-label', `문제 ${number}${done ? ', 암송 완료' : ''}`);
+  button.textContent = entry.id;
+  button.setAttribute('aria-label', done ? `${entry.id}, 암송 완료` : entry.id);
   if (index === selectedIndex) button.setAttribute('aria-current', 'true');
   if (done) {
     const mark = document.createElement('span');

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f3">
+  <title>말씀 암송 · StarSnap</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell masthead">
+      <span class="brand"><span class="brand-mark" aria-hidden="true">✓</span> 말씀 암송</span>
+      <span class="brand-name">StarSnap</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="intro">
+      <div>
+        <h1>암송 체크</h1>
+        <p>A·B 시리즈의 24구절을 연습하고, 외운 구절을 체크하세요.</p>
+      </div>
+    </div>
+
+    <dl class="stats" aria-label="암송 현황">
+      <div><dt>전체 구절</dt><dd id="total">24</dd></div>
+      <div><dt>암송 완료</dt><dd id="passed">0</dd></div>
+      <div><dt>남은 구절</dt><dd id="pending">24</dd></div>
+    </dl>
+
+    <p id="storage-error" class="notice" role="alert" hidden></p>
+
+    <div class="workspace">
+      <section class="card library" aria-labelledby="library-title">
+        <div class="card-head"><h2 id="library-title">암송 목록</h2></div>
+        <div class="series" id="series" role="group" aria-label="시리즈 선택"></div>
+        <div id="passages"></div>
+      </section>
+
+      <section class="card practice" aria-labelledby="practice-title">
+        <div class="card-head"><h2 id="practice-title">암송 연습</h2></div>
+        <div class="exercise">
+          <div class="exercise-head">
+            <div>
+              <p id="topic" class="muted topic"></p>
+              <h3 id="reference" tabindex="-1"></h3>
+              <p id="attempts" class="muted"></p>
+            </div>
+          </div>
+          <label class="completion" for="completed">
+            <input type="checkbox" id="completed">
+            <span>암송 완료</span>
+          </label>
+
+          <div class="typing">
+            <div class="typing-head">
+              <h4>입력으로 확인</h4>
+              <button type="button" id="edit" class="button quiet">본문 등록</button>
+            </div>
+            <p id="no-original" class="muted">본문을 등록하면 기억한 말씀을 입력해 채점할 수 있습니다.</p>
+            <div id="written" hidden>
+              <button type="button" class="button secondary reveal" id="reveal" aria-controls="original" aria-expanded="false">본문 보기</button>
+              <p id="original" class="original" hidden></p>
+              <form id="practice-form">
+                <label for="answer">암송 내용</label>
+                <textarea id="answer" rows="4" maxlength="2000" required aria-describedby="answer-hint" placeholder="기억나는 대로 입력하세요." spellcheck="false" autocomplete="off"></textarea>
+                <p class="muted hint" id="answer-hint">띄어쓰기와 문장부호는 채점에서 제외합니다.</p>
+                <div class="exercise-actions">
+                  <button type="submit" class="button primary">채점하기</button>
+                  <button type="button" id="retry" class="button secondary" hidden>다시 입력</button>
+                </div>
+              </form>
+              <div id="result" class="result" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <footer>완료 상태와 등록한 본문은 이 브라우저에 저장됩니다.</footer>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form">
+      <h2 id="editor-title">본문 등록</h2>
+      <p id="editor-reference" class="muted editor-reference"></p>
+      <label for="edit-original">외울 말씀</label>
+      <textarea id="edit-original" name="text" rows="5" maxlength="2000" placeholder="암송에 사용하는 번역본의 본문을 입력하세요."></textarea>
+      <p id="editor-hint" class="muted hint" hidden>본문을 비우고 저장하면 입력 채점이 해제됩니다.</p>
+      <p id="editor-error" class="field-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" data-close="editor" class="button secondary">취소</button>
+        <button type="submit" class="button primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+</body>
+</html>

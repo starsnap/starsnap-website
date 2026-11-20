@@ -134,6 +134,7 @@ function showResult(title, detail, correct) {
   message.textContent = detail;
   result.className = `result ${correct ? 'success' : 'retry'}`;
   result.replaceChildren(heading, message);
+  result.scrollIntoView({ block: 'nearest' });
 }
 
 majorForm.addEventListener('submit', (event) => {
@@ -186,8 +187,8 @@ byId('practice-form').addEventListener('submit', async (event) => {
     if (questionIndex !== selectedIndex || Object.keys(fields).some(key => fields[key].value !== submitted[key])) return;
     const detail = Object.entries(scores).map(([key, match]) => `${fieldLabels[key]} ${match ? '일치' : '다시 확인'}`).join(' · ');
     const title = correct && hasMajorTopic(verse.series) ? '암송 성공' : '구절 채점 완료';
-    showResult(correct ? title : '다시 연습해 보세요', saved ? detail : `${detail} 결과를 저장하지 못했습니다.`, correct);
     retry.hidden = false;
+    showResult(correct ? title : '다시 연습해 보세요', saved ? detail : `${detail} 결과를 저장하지 못했습니다.`, correct);
   } catch {
     if (questionIndex === selectedIndex) showResult('채점할 수 없습니다.', '페이지를 새로고침한 뒤 다시 시도해 주세요.', false);
   } finally {

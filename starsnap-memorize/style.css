@@ -79,6 +79,11 @@ textarea::placeholder { color: #66766b; }
 .result.retry, .notice { background: #f8eee2; color: #754021; }
 .notice { margin-bottom: 14px; }
 .result p { margin-top: 3px; }
+.mistake-review { margin-top: 12px; }
+.review-toggle { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.review-toggle input { margin: 0; width: 18px; height: 18px; }
+.review-answer { padding: 12px; border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-answer mark { background: #fde4e0; color: #812d26; font-weight: 700; text-decoration: underline; }
 main.shell { padding-bottom: 28px; }
 .reset-dialog { width: min(420px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 15px; color: var(--ink); }
 .reset-dialog::backdrop { background: rgb(18 40 32 / 42%); }

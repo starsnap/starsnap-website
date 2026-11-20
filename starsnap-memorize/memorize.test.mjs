@@ -2,6 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { curriculum, grade, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs';
 import { answerDigests } from './answer-digests.mjs';
+import { mistakeRanges } from './verse-review.mjs';
+
+test('locates changed and extra letters and marks omissions in the original input', () => {
+  assert.deepEqual(mistakeRanges('가나다라마', '‘가 나\n다 라 마!’'), []);
+  assert.deepEqual(mistakeRanges('가나다라마', '‘가 너 다 라 머!’'), [[3, 4], [9, 10]]);
+  assert.deepEqual(mistakeRanges('가나다라마', '가나타 다라마'), [[2, 3]]);
+  assert.deepEqual(mistakeRanges('가나다라마', '가 다라마'), [[2, 2]]);
+  assert.deepEqual(mistakeRanges('가나다라마', '가나다라.'), [[4, 4]]);
+  assert.deepEqual(mistakeRanges('나', 'ㄱㅏ'), [[0, 2]]);
+  assert.deepEqual(mistakeRanges('가', '가'.normalize('NFD')), []);
+});
 
 test('contains both 12-verse series in their supplied order', () => {
   assert.deepEqual(Object.keys(curriculum), ['A', 'B']);

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f7f3">
   <title>말씀 암송</title>
-  <link rel="stylesheet" href="/style.css?v=13">
-  <script type="module" src="/app.mjs?v=15"></script>
+  <link rel="stylesheet" href="/style.css?v=16">
+  <script type="module" src="/app.mjs?v=16"></script>
 </head>
 <body>
   <header class="topbar">
@@ -84,6 +84,10 @@
             </div>
           </form>
           <div id="result" class="result" role="status" aria-live="polite"></div>
+          <div id="mistake-review" class="mistake-review" hidden>
+            <label class="review-toggle"><input type="checkbox" id="show-mistakes" aria-controls="review-answer"> 틀린 부분 확인</label>
+            <p id="review-answer" class="review-answer" aria-live="polite" hidden></p>
+          </div>
         </div>
       </section>
       <section id="passages" class="card library" aria-labelledby="library-title">

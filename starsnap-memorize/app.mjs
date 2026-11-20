@@ -14,6 +14,9 @@ const majorForm = byId('major-topic-form');
 const majorInput = byId('major-topic');
 const majorStatus = byId('major-topic-status');
 const result = byId('result');
+const mistakeReview = byId('mistake-review');
+const showMistakes = byId('show-mistakes');
+const reviewAnswer = byId('review-answer');
 const retry = byId('retry');
 const submit = byId('submit');
 const resetProgressButtons = document.querySelectorAll('[data-reset-scope]');
@@ -72,6 +75,7 @@ function storeProgress(next) {
 function resetAnswer() {
   for (const field of Object.values(fields)) field.value = '';
   result.replaceChildren();
+  clearMistakeReview();
   retry.hidden = true;
 }
 
@@ -127,14 +131,62 @@ function renderQuestion(entry, index) {
   return item;
 }
 
-function showResult(title, detail, correct) {
+function clearMistakeReview() {
+  showMistakes.onchange = null;
+  showMistakes.checked = false;
+  reviewAnswer.hidden = true;
+  reviewAnswer.replaceChildren();
+  mistakeReview.hidden = true;
+}
+
+function showMistakeReview({ id, text }) {
+  mistakeReview.hidden = false;
+  let request;
+  const toggle = async () => {
+    reviewAnswer.hidden = !showMistakes.checked;
+    if (reviewAnswer.hidden) return;
+    reviewAnswer.textContent = '틀린 부분을 확인하는 중입니다.';
+    try {
+      request ??= fetch('/practice-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, text }),
+      }).then(response => {
+        if (!response.ok) throw new Error('Review unavailable');
+        return response.json();
+      });
+      const ranges = await request;
+      if (showMistakes.onchange !== toggle || !showMistakes.checked) return;
+      const parts = [];
+      let offset = 0;
+      for (const [start, end] of ranges) {
+        parts.push(text.slice(offset, start));
+        const mark = document.createElement('mark');
+        mark.textContent = start === end ? '[빠짐]' : text.slice(start, end);
+        parts.push(mark);
+        offset = end;
+      }
+      reviewAnswer.replaceChildren(...parts, text.slice(offset));
+    } catch {
+      request = undefined;
+      if (showMistakes.onchange !== toggle || !showMistakes.checked) return;
+      reviewAnswer.textContent = '틀린 부분을 불러오지 못했습니다. 체크를 해제한 뒤 다시 선택해 주세요.';
+    }
+    reviewAnswer.scrollIntoView({ block: 'nearest' });
+  };
+  showMistakes.onchange = toggle;
+}
+
+function showResult(title, detail, correct, mistake) {
   const heading = document.createElement('strong');
   const message = document.createElement('p');
   heading.textContent = title;
   message.textContent = detail;
   result.className = `result ${correct ? 'success' : 'retry'}`;
   result.replaceChildren(heading, message);
-  result.scrollIntoView({ block: 'nearest' });
+  clearMistakeReview();
+  if (mistake) showMistakeReview(mistake);
+  (mistake ? mistakeReview : result).scrollIntoView({ block: 'nearest' });
 }
 
 majorForm.addEventListener('submit', (event) => {
@@ -163,6 +215,8 @@ for (const field of [fields.chapter, fields.startVerse, fields.endVerse]) {
   });
 }
 
+fields.text.addEventListener('input', clearMistakeReview);
+
 byId('practice-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (submit.disabled) return;
@@ -188,7 +242,8 @@ byId('practice-form').addEventListener('submit', async (event) => {
     const detail = Object.entries(scores).map(([key, match]) => `${fieldLabels[key]} ${match ? '일치' : '다시 확인'}`).join(' · ');
     const title = correct && hasMajorTopic(verse.series) ? '암송 성공' : '구절 채점 완료';
     retry.hidden = false;
-    showResult(correct ? title : '다시 연습해 보세요', saved ? detail : `${detail} 결과를 저장하지 못했습니다.`, correct);
+    showResult(correct ? title : '다시 연습해 보세요', saved ? detail : `${detail} 결과를 저장하지 못했습니다.`, correct,
+      scores.text ? undefined : { id: verse.id, text: submitted.text });
   } catch {
     if (questionIndex === selectedIndex) showResult('채점할 수 없습니다.', '페이지를 새로고침한 뒤 다시 시도해 주세요.', false);
   } finally {

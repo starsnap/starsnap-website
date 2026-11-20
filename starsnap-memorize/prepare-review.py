@@ -48,8 +48,7 @@ def passage(reference, books):
         if not end:
             raise ValueError(f'Unable to read {book} {chapter}:{number}')
         verses.append(unescape(re.sub(r'<[^>]+>', '', raw[:end.start()])))
-    text = unicodedata.normalize('NFKC', ' '.join(verses)).lower()
-    return ''.join(char for char in text if unicodedata.category(char)[0] in 'LMN')
+    return ' '.join(' '.join(verses).split())
 
 
 if __name__ == '__main__':
@@ -60,6 +59,8 @@ if __name__ == '__main__':
     with ThreadPoolExecutor(max_workers=4) as pool:
         answers = dict(zip(digests, pool.map(lambda reference: passage(reference, books), digests)))
     for reference, text in answers.items():
-        if sha256(text.encode()).hexdigest() != digests[reference]:
+        normalized = unicodedata.normalize('NFKC', text).lower()
+        normalized = ''.join(char for char in normalized if unicodedata.category(char)[0] in 'LMN')
+        if sha256(normalized.encode()).hexdigest() != digests[reference]:
             raise ValueError(f'Official passage does not match the grading digest for {reference}')
     print(json.dumps(answers))

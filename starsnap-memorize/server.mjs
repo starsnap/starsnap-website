@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { answerDigests } from './answer-digests.mjs';
 import { curriculum, normalize } from './memorize.mjs';
-import { mistakeRanges } from './verse-review.mjs';
+import { reviewMistakes } from './verse-review.mjs';
 
 const read = (name) => readFileSync(new URL(name, import.meta.url));
 const reviewData = JSON.parse(read('review-data.json'));
@@ -13,7 +13,7 @@ const answers = new Map(entries.map(({ id, reference }) => {
   if (typeof text !== 'string' || createHash('sha256').update(normalize(text)).digest('hex') !== answerDigests[reference]) {
     throw new Error(`Review data does not match grading for ${id}`);
   }
-  return [id, normalize(text)];
+  return [id, text];
 }));
 
 const types = { html: 'text/html', css: 'text/css', mjs: 'text/javascript' };
@@ -52,9 +52,10 @@ async function review(request, response) {
     response.writeHead(400).end();
     return;
   }
-  const ranges = mistakeRanges(answers.get(body.id), body.text);
+  const mistakes = reviewMistakes(answers.get(body.id), body.text);
+  const result = request.url.endsWith('?v=2') ? mistakes : mistakes.map(({ start, end }) => [start, end]);
   response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-  response.end(JSON.stringify(ranges));
+  response.end(JSON.stringify(result));
 }
 
 createServer({ requestTimeout: 15_000, headersTimeout: 10_000 }, (request, response) => {

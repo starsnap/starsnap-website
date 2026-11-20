@@ -2,16 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { curriculum, grade, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs';
 import { answerDigests } from './answer-digests.mjs';
-import { mistakeRanges } from './verse-review.mjs';
+import { reviewMistakes } from './verse-review.mjs';
 
-test('locates changed and extra letters and marks omissions in the original input', () => {
-  assert.deepEqual(mistakeRanges('가나다라마', '‘가 나\n다 라 마!’'), []);
-  assert.deepEqual(mistakeRanges('가나다라마', '‘가 너 다 라 머!’'), [[3, 4], [9, 10]]);
-  assert.deepEqual(mistakeRanges('가나다라마', '가나타 다라마'), [[2, 3]]);
-  assert.deepEqual(mistakeRanges('가나다라마', '가 다라마'), [[2, 2]]);
-  assert.deepEqual(mistakeRanges('가나다라마', '가나다라.'), [[4, 4]]);
-  assert.deepEqual(mistakeRanges('나', 'ㄱㅏ'), [[0, 2]]);
-  assert.deepEqual(mistakeRanges('가', '가'.normalize('NFD')), []);
+test('groups nearby letter edits into readable comparisons in the submitted text', () => {
+  const compare = (reference, text) => reviewMistakes(reference, text)
+    .map(({ start, end, correct }) => [text.slice(start, end), correct]);
+  assert.deepEqual(
+    compare('사는 것이 아니요 오직 나를 위하여', '사는 것이 아니라 오직 나를 위해'),
+    [['아니라', '아니요'], ['위해', '위하여']],
+  );
+  assert.deepEqual(compare('육체 가운데 사는 것은', '가운데 사는것을'), [['가운데', '육체 가운데'], ['것을', '것은']]);
+  assert.deepEqual(compare('육체 가운데 사는 것은', '육체 가운데 무척 사는 것은'), [['무척', '']]);
+  assert.deepEqual(compare('육체 가운데 사는 것은', '육체 가운자데 사는 것은'), [['가운자데', '가운데']]);
+  assert.deepEqual(compare('가 나 다 라 마', '‘가 나\n다 라 마!’'), []);
+  assert.deepEqual(compare('나 여기 있다', 'ㄱㅏ 여기 있다'), [['ㄱㅏ', '나']]);
+  assert.deepEqual(compare('가', '가'.normalize('NFD')), []);
+  assert.deepEqual(compare('가 나 다 라 마', ''), [['', null]]);
 });
 
 test('contains both 12-verse series in their supplied order', () => {

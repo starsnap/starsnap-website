@@ -139,6 +139,38 @@ function clearMistakeReview() {
   mistakeReview.hidden = true;
 }
 
+function renderMistakes(text, corrections) {
+  const heading = document.createElement('p');
+  heading.className = 'review-heading';
+  heading.textContent = '입력한 표현 → 고칠 표현';
+  const comparisons = document.createElement('ul');
+  comparisons.className = 'review-comparisons';
+  const preview = document.createElement('p');
+  preview.className = 'review-input';
+  let offset = 0;
+  for (const { start, end, correct } of corrections) {
+    const row = document.createElement('li');
+    const written = document.createElement('span');
+    const arrow = document.createElement('span');
+    const suggestion = document.createElement('strong');
+    written.textContent = text.slice(start, end) || '입력에서 빠짐';
+    arrow.textContent = '→';
+    suggestion.textContent = correct === '' ? '지우기' : correct ?? '본문 다시 확인';
+    row.append(written, arrow, suggestion);
+    comparisons.append(row);
+
+    if (end > offset && end > start) {
+      const from = Math.max(offset, start);
+      const mark = document.createElement('mark');
+      mark.textContent = text.slice(from, end);
+      preview.append(text.slice(offset, from), mark);
+      offset = end;
+    }
+  }
+  preview.append(text.slice(offset));
+  reviewAnswer.replaceChildren(heading, comparisons, preview);
+}
+
 function showMistakeReview({ id, text }) {
   mistakeReview.hidden = false;
   let request;
@@ -147,7 +179,7 @@ function showMistakeReview({ id, text }) {
     if (reviewAnswer.hidden) return;
     reviewAnswer.textContent = '틀린 부분을 확인하는 중입니다.';
     try {
-      request ??= fetch('/practice-review', {
+      request ??= fetch('/practice-review?v=2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, text }),
@@ -155,24 +187,15 @@ function showMistakeReview({ id, text }) {
         if (!response.ok) throw new Error('Review unavailable');
         return response.json();
       });
-      const ranges = await request;
+      const corrections = await request;
       if (showMistakes.onchange !== toggle || !showMistakes.checked) return;
-      const parts = [];
-      let offset = 0;
-      for (const [start, end] of ranges) {
-        parts.push(text.slice(offset, start));
-        const mark = document.createElement('mark');
-        mark.textContent = start === end ? '[빠짐]' : text.slice(start, end);
-        parts.push(mark);
-        offset = end;
-      }
-      reviewAnswer.replaceChildren(...parts, text.slice(offset));
+      renderMistakes(text, corrections);
     } catch {
       request = undefined;
       if (showMistakes.onchange !== toggle || !showMistakes.checked) return;
       reviewAnswer.textContent = '틀린 부분을 불러오지 못했습니다. 체크를 해제한 뒤 다시 선택해 주세요.';
     }
-    reviewAnswer.scrollIntoView({ block: 'nearest' });
+    mistakeReview.scrollIntoView({ block: 'start' });
   };
   showMistakes.onchange = toggle;
 }

@@ -30,10 +30,16 @@ function sourceSpans(text, characters) {
   return spans;
 }
 
-export function mistakeRanges(reference, text) {
-  const expected = [...reference];
+function insideWord(text, spans, index) {
+  return index > 0 && index < spans.length &&
+    !/\s/u.test(text.slice(spans[index - 1][1], spans[index][0]));
+}
+
+export function reviewMistakes(reference, text) {
+  const expected = [...normalize(reference)];
   const entered = [...normalize(text)];
-  const spans = sourceSpans(text, entered);
+  const referenceSpans = sourceSpans(reference, expected);
+  const textSpans = sourceSpans(text, entered);
   const rows = Array.from({ length: expected.length + 1 }, () => new Uint16Array(entered.length + 1));
   for (let i = expected.length; i >= 0; i--) {
     rows[i][entered.length] = expected.length - i;
@@ -44,36 +50,68 @@ export function mistakeRanges(reference, text) {
     }
   }
 
-  const ranges = [];
+  const path = [[0, 0]];
+  const changed = [];
+  const matches = [];
   let i = 0;
   let j = 0;
   while (i < expected.length || j < entered.length) {
-    if (i < expected.length && j < entered.length && expected[i] === entered[j]) {
+    const match = i < expected.length && j < entered.length && expected[i] === entered[j];
+    const step = matches.length;
+    matches.push(match);
+    if (match) {
       i++;
       j++;
-      continue;
-    }
-    const distance = rows[i][j] - 1;
-    // Prefer an omission or surplus when it aligns the next matching character.
-    if (i < expected.length && rows[i + 1][j] === distance) {
-      const offset = spans[j]?.[0] ?? spans.at(-1)?.[1] ?? 0;
-      ranges.push([offset, offset]);
-      i++;
-    } else if (j < entered.length && rows[i][j + 1] === distance) {
-      ranges.push(spans[j++]);
     } else {
-      ranges.push(spans[j++]);
-      i++;
+      const previous = changed.at(-1);
+      if (previous?.[1] === step) previous[1]++;
+      else changed.push([step, step + 1]);
+      const distance = rows[i][j] - 1;
+      if (i < expected.length && rows[i + 1][j] === distance) i++;
+      else if (j < entered.length && rows[i][j + 1] === distance) j++;
+      else {
+        i++;
+        j++;
+      }
     }
+    path.push([i, j]);
   }
 
-  const merged = [];
-  for (const [start, end] of ranges) {
-    const last = merged.at(-1);
-    if (last && start < last[1]) last[1] = Math.max(last[1], end);
-    else if (last && start === last[0] && end === last[1]) continue;
-    else if (last && last[0] !== last[1] && start === last[1] && start !== end) last[1] = end;
-    else merged.push([start, end]);
+  const phrases = [];
+  for (let [start, end] of changed) {
+    const hasReference = path[start][0] !== path[end][0];
+    const wordAt = (step) => hasReference
+      ? insideWord(reference, referenceSpans, path[step][0])
+      : insideWord(text, textSpans, path[step][1]);
+    while (matches[start - 1] && wordAt(start)) start--;
+    while (matches[end] && wordAt(end)) end++;
+    // Anchor a missing word to a nearby matching word in the submitted text.
+    if (path[start][1] === path[end][1]) {
+      if (matches[end]) {
+        do { end++; } while (matches[end] && wordAt(end));
+      } else if (matches[start - 1]) {
+        do { start--; } while (matches[start - 1] && wordAt(start));
+      }
+    }
+    const previous = phrases.at(-1);
+    if (previous && start < previous[1]) previous[1] = Math.max(previous[1], end);
+    else phrases.push([start, end]);
   }
-  return merged;
+
+  // Review can show short corrections without revealing the full answer.
+  let hintBudget = Math.min(24, expected.length - 1);
+  return phrases.map(([first, last]) => {
+    const [refStart, textStart] = path[first];
+    const [refEnd, textEnd] = path[last];
+    const start = textSpans[textStart]?.[0] ?? textSpans.at(-1)?.[1] ?? 0;
+    const end = textStart === textEnd ? start : textSpans[textEnd - 1][1];
+    const length = refEnd - refStart;
+    let correct = null;
+    if (length === 0) correct = '';
+    else if (length <= hintBudget) {
+      correct = reference.slice(referenceSpans[refStart][0], referenceSpans[refEnd - 1][1]);
+      hintBudget -= length;
+    }
+    return { start, end, correct };
+  });
 }

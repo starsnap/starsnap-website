@@ -1,4 +1,4 @@
-import { curriculum, gradeMajorTopic, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
+import { curriculum, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs';
 
 const byId = (id) => document.getElementById(id);
 const fields = {
@@ -16,7 +16,7 @@ const majorStatus = byId('major-topic-status');
 const result = byId('result');
 const retry = byId('retry');
 const submit = byId('submit');
-const resetProgressButton = byId('reset-progress');
+const resetProgressButtons = document.querySelectorAll('[data-reset-scope]');
 const resetProgressDialog = byId('reset-progress-dialog');
 const storageError = byId('storage-error');
 const allEntries = Object.values(curriculum).flatMap((groups) => groups.flatMap(({ entries }) => entries));
@@ -24,6 +24,7 @@ const emptyProgress = { completed: false, attempts: 0 };
 let progress = { entries: [], completedSeries: [] };
 let majorMessage = '';
 let selectedIndex = 0;
+let resetScope = 'all';
 
 function showStorageError(message) {
   storageError.textContent = message;
@@ -172,7 +173,7 @@ byId('practice-form').addEventListener('submit', async (event) => {
     return;
   }
   submit.disabled = true;
-  resetProgressButton.disabled = true;
+  for (const button of resetProgressButtons) button.disabled = true;
   try {
     const scores = await gradeQuestion(verse, submitted);
     const correct = Object.values(scores).every(Boolean);
@@ -191,7 +192,7 @@ byId('practice-form').addEventListener('submit', async (event) => {
     if (questionIndex === selectedIndex) showResult('채점할 수 없습니다.', '페이지를 새로고침한 뒤 다시 시도해 주세요.', false);
   } finally {
     submit.disabled = false;
-    resetProgressButton.disabled = false;
+    for (const button of resetProgressButtons) button.disabled = false;
   }
 });
 
@@ -199,15 +200,30 @@ retry.addEventListener('click', () => {
   resetAnswer();
   fields.topic.focus();
 });
-resetProgressButton.addEventListener('click', () => {
-  resetProgressDialog.returnValue = '';
-  resetProgressDialog.showModal();
-});
+for (const button of resetProgressButtons) {
+  button.addEventListener('click', () => {
+    resetScope = button.dataset.resetScope;
+    const label = resetScope === 'all' ? '전체' : `${resetScope} 시리즈`;
+    byId('reset-progress-title').textContent = `${label} 기록을 초기화할까요?`;
+    byId('reset-progress-description').textContent = `이 브라우저의 ${label} 대주제 확인, 구절 완료 표시, 연습 횟수를 지웁니다.`;
+    resetProgressDialog.returnValue = '';
+    resetProgressDialog.showModal();
+  });
+}
 resetProgressDialog.addEventListener('close', () => {
-  if (resetProgressDialog.returnValue !== 'reset' || !storeProgress({ entries: [], completedSeries: [] })) return;
+  if (resetProgressDialog.returnValue !== 'reset') return;
+  const all = resetScope === 'all';
+  const saved = all
+    ? storeProgress({ entries: [], completedSeries: [] })
+    : persist(current => resetSeriesProgress(current, resetScope));
+  if (!saved) return;
+  if (!all && allEntries[selectedIndex].series !== resetScope) {
+    render();
+    return;
+  }
   majorInput.value = '';
   majorMessage = '';
-  select(0);
+  select(all ? 0 : allEntries.findIndex(entry => entry.series === resetScope));
 });
 window.addEventListener('storage', (event) => {
   if (event.key === storageKey || event.key === null) {

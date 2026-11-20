@@ -127,3 +127,10 @@ export function loadProgress(storage) {
 export function saveProgress(storage, progress) {
   storage.setItem(storageKey, JSON.stringify(progress));
 }
+
+export function resetSeriesProgress(progress, series) {
+  return {
+    entries: progress.entries.filter(entry => !entry.id.startsWith(`${series}-`)),
+    completedSeries: progress.completedSeries.filter(completed => completed !== series),
+  };
+}

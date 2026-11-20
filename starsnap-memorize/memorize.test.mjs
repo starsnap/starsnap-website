@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { curriculum, grade, gradeMajorTopic, gradeQuestion, loadProgress, normalize, saveProgress, storageKey } from './memorize.mjs';
+import { curriculum, grade, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs';
 import { answerDigests } from './answer-digests.mjs';
 
 test('contains both 12-verse series in their supplied order', () => {
@@ -96,4 +96,17 @@ test('restores past completions and recognizes their series major topics', () =>
   assert.throws(() => loadProgress(storage), /Invalid memorization data/);
   items.set(storageKey, JSON.stringify({ entries: [], completedSeries: ['C'] }));
   assert.throws(() => loadProgress(storage), /Invalid memorization data/);
+});
+
+test('resets just the chosen series, including when the records were migrated', () => {
+  const a = [{ id: 'A-1', attempts: 2, completed: true }, { id: 'A-2', attempts: 3, completed: false }];
+  const b = [{ id: 'B-1', attempts: 4, completed: true }];
+  const previous = JSON.stringify([...a, ...b]);
+  const items = new Map([['starsnap-memorize-v4', previous]]);
+  const storage = { getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
+  const migrated = loadProgress(storage);
+  assert.deepEqual(resetSeriesProgress(migrated, 'B'), { entries: a, completedSeries: ['A'] });
+  saveProgress(storage, resetSeriesProgress(migrated, 'A'));
+  assert.deepEqual(loadProgress(storage), { entries: b, completedSeries: ['B'] });
+  assert.equal(items.get('starsnap-memorize-v4'), previous);
 });

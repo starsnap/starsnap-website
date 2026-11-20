@@ -21,7 +21,7 @@
         <h1>암송 체크</h1>
         <p>대주제를 한 번 확인하고, 암송 코드마다 소주제, 장절, 말씀을 적어 보세요.</p>
       </div>
-      <button type="button" class="button secondary" id="reset-progress">기록 초기화</button>
+      <button type="button" class="button secondary" data-reset-scope="all">전체 기록 초기화</button>
     </div>
 
     <dl class="stats" aria-label="암송 현황">
@@ -90,11 +90,17 @@
       <section id="passages" class="card library" aria-labelledby="library-title">
         <div class="card-head"><h2 id="library-title">문제 목록</h2></div>
         <section class="passage-group" aria-labelledby="series-a-title">
-          <h3 id="series-a-title">A</h3>
+          <div class="passage-group-heading">
+            <h3 id="series-a-title">A</h3>
+            <button type="button" class="button secondary" data-reset-scope="A">A 기록 초기화</button>
+          </div>
           <ol id="passages-A" class="passages" role="list"></ol>
         </section>
         <section class="passage-group" aria-labelledby="series-b-title">
-          <h3 id="series-b-title">B</h3>
+          <div class="passage-group-heading">
+            <h3 id="series-b-title">B</h3>
+            <button type="button" class="button secondary" data-reset-scope="B">B 기록 초기화</button>
+          </div>
           <ol id="passages-B" class="passages" role="list"></ol>
         </section>
       </section>

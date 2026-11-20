@@ -88,6 +88,10 @@ test('restores past completions and recognizes their series major topics', () =>
   saveProgress(storage, saved);
   assert.deepEqual(loadProgress(storage), saved);
   assert.equal(items.get('starsnap-memorize-v4'), JSON.stringify(previous));
+  const cleared = { entries: [], completedSeries: [] };
+  saveProgress(storage, cleared);
+  assert.deepEqual(loadProgress(storage), cleared);
+  assert.equal(items.get('starsnap-memorize-v4'), JSON.stringify(previous));
   items.set(storageKey, '[{}]');
   assert.throws(() => loadProgress(storage), /Invalid memorization data/);
   items.set(storageKey, JSON.stringify({ entries: [], completedSeries: ['C'] }));

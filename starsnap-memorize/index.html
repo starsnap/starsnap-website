@@ -21,6 +21,7 @@
         <h1>암송 체크</h1>
         <p>대주제를 한 번 확인하고, 암송 코드마다 소주제, 장절, 말씀을 적어 보세요.</p>
       </div>
+      <button type="button" class="button secondary" id="reset-progress">기록 초기화</button>
     </div>
 
     <dl class="stats" aria-label="암송 현황">
@@ -99,5 +100,15 @@
       </section>
     </div>
   </main>
+  <dialog class="reset-dialog" id="reset-progress-dialog" aria-labelledby="reset-progress-title" aria-describedby="reset-progress-description">
+    <form method="dialog">
+      <h2 id="reset-progress-title">암송 기록을 초기화할까요?</h2>
+      <p class="muted hint" id="reset-progress-description">이 브라우저의 대주제 확인, 완료한 구절, 연습 횟수를 지웁니다.</p>
+      <div class="exercise-actions">
+        <button type="submit" value="cancel" class="button secondary" autofocus>취소</button>
+        <button type="submit" value="reset" class="button primary">초기화</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

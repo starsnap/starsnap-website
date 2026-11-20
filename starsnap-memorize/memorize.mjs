@@ -1,4 +1,4 @@
-import { answerDigests } from './answer-digests.mjs';
+import { answerDigests } from './answer-digests.mjs?v=15';
 
 export const storageKey = 'starsnap-memorize-v5';
 const previousStorageKey = 'starsnap-memorize-v4';

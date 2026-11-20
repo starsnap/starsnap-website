@@ -1,4 +1,4 @@
-import { curriculum, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs?v=13';
+import { curriculum, gradeMajorTopic, gradeQuestion, loadProgress, normalize, resetSeriesProgress, saveProgress, storageKey } from './memorize.mjs?v=15';
 
 const byId = (id) => document.getElementById(id);
 const fields = {

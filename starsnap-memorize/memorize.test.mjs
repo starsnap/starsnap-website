@@ -24,7 +24,7 @@ test('contains both 12-verse series in their supplied order', () => {
   assert.deepEqual(Object.keys(curriculum), ['A', 'B']);
   const a = curriculum.A.flatMap(({ entries }) => entries.map(({ reference }) => reference));
   const b = curriculum.B.flatMap(({ entries }) => entries.map(({ reference }) => reference));
-  assert.deepEqual(a, ['고린도후서 5:17', '갈라디아서 2:20', '로마서 12:1', '요한복음 14:21', '디모데후서 3:16', '여호수아 1:8', '요한복음 15:7', '빌립보서 4:6–7', '마태복음 18:20', '히브리서 10:23–24', '마태복음 4:19', '로마서 1:16']);
+  assert.deepEqual(a, ['고린도후서 5:17', '갈라디아서 2:20', '로마서 12:1', '요한복음 14:21', '디모데후서 3:16', '여호수아 1:8', '요한복음 15:7', '빌립보서 4:6–7', '마태복음 18:20', '히브리서 10:24–25', '마태복음 4:19', '로마서 1:16']);
   assert.deepEqual(b, ['로마서 3:23', '이사야 53:6', '로마서 6:23', '히브리서 9:27', '로마서 5:8', '베드로전서 3:18', '에베소서 2:8–9', '디도서 3:5', '요한복음 1:12', '요한계시록 3:20', '요한일서 5:13', '요한복음 5:24']);
   assert.deepEqual(Object.keys(answerDigests).sort(), [...a, ...b].sort());
   assert(Object.values(answerDigests).every((digest) => /^[0-9a-f]{64}$/.test(digest)));
@@ -80,8 +80,8 @@ test('checks chapters and verse endpoints as separate numbers', async () => {
     [single, '롬', '23', '3', '', false],
     [single, '롬', '3', '23', '24', false],
     [matthew, '마태복음', '18', '20', '', true],
-    [hebrews, '히', '10', '23', '24', true],
-    [hebrews, '히', '10', '24', '25', false],
+    [hebrews, '히', '10', '24', '25', true],
+    [hebrews, '히', '10', '23', '24', false],
     [range, '엡', '2', '8', '9', true],
     [range, '에베소서', '2', '8', '', false],
     [range, '에베소서', '2', '8-9', '', false],

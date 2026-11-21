@@ -1,4 +1,4 @@
-import { answerDigests } from './answer-digests.mjs?v=18';
+import { answerDigests } from './answer-digests.mjs?v=19';
 
 export const storageKey = 'starsnap-memorize-v5';
 const previousStorageKey = 'starsnap-memorize-v4';
@@ -14,7 +14,7 @@ const outline = {
     ['그리스도께 순종', '로마서 12:1', '요한복음 14:21'],
     ['말씀', '디모데후서 3:16', '여호수아 1:8'],
     ['기도', '요한복음 15:7', '빌립보서 4:6–7'],
-    ['교제', '마태복음 18:20', '히브리서 10:23–24'],
+    ['교제', '마태복음 18:20', '히브리서 10:24–25'],
     ['증거', '마태복음 4:19', '로마서 1:16'],
   ],
   B: [
